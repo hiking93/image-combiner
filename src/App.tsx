@@ -1,6 +1,6 @@
 function App() {
   return (
-    <main>
+    <main className="flex h-screen items-center justify-center">
       <h1>Hello World</h1>
     </main>
   );
