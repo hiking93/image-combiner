@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/utils";
@@ -35,6 +35,11 @@ export function SortableImage({
 }: SortableImageProps) {
   const ref = useRef<HTMLDivElement>(null);
   const didDrag = useRef(false);
+  const [isNew, setIsNew] = useState(true);
+  useEffect(() => {
+    const id = setTimeout(() => setIsNew(false), 250);
+    return () => clearTimeout(id);
+  }, []);
 
   const handleRemove = () => {
     const el = ref.current;
@@ -76,7 +81,8 @@ export function SortableImage({
       }}
       style={style}
       className={cn(
-        "group relative shrink-0 cursor-grab overflow-hidden rounded-lg border bg-card shadow-sm animate-[scale-in_200ms_ease-out]",
+        "group relative shrink-0 cursor-grab overflow-hidden rounded-lg border bg-card shadow-sm",
+        isNew && "animate-[scale-in_200ms_ease-out]",
         isDragging ? "z-10 opacity-0" : "hover:shadow-md",
       )}
       {...attributes}
