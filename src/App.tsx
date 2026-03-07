@@ -289,19 +289,25 @@ function App() {
             {images.length} 張圖片
           </Badge>
         )}
-        {loadingCount > 0 && (
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        <div
+          className={`flex items-center gap-1.5 text-xs text-muted-foreground transition-all duration-200 ${
+            loadingCount > 0
+              ? "max-w-80 opacity-100"
+              : "max-w-0 overflow-hidden opacity-0"
+          }`}
+        >
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+          <span className="whitespace-nowrap">
             正在載入 {loadingCount} 張圖片…
-            <button
-              onClick={cancelLoading}
-              className="rounded-full text-muted-foreground hover:text-destructive"
-              title="取消載入"
-            >
-              <XCircle className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        )}
+          </span>
+          <button
+            onClick={cancelLoading}
+            className="shrink-0 rounded-full text-muted-foreground transition-colors hover:text-destructive"
+            title="取消載入"
+          >
+            <XCircle className="h-3.5 w-3.5" />
+          </button>
+        </div>
         <div className="ml-auto flex items-center gap-2">
           {hasImages && (
             <>
@@ -327,31 +333,42 @@ function App() {
                   ⌘P
                 </kbd>
               </Button>
-              {isProcessing ? (
-                <>
-                  <Button size="sm" disabled className="gap-1.5">
+              <Button
+                size="sm"
+                onClick={isProcessing ? undefined : handleCombine}
+                disabled={isProcessing}
+                className="gap-1.5"
+              >
+                {isProcessing ? (
+                  <>
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     {processProgress || "處理中…"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={cancelCombine}
-                    className="gap-1 text-muted-foreground hover:text-destructive"
-                  >
-                    <XCircle className="h-3.5 w-3.5" />
-                    取消
-                  </Button>
-                </>
-              ) : (
-                <Button size="sm" onClick={handleCombine} className="gap-1.5">
-                  <Download className="h-3.5 w-3.5" />
-                  合併並儲存
-                  <kbd className="rounded bg-primary-foreground/20 px-1 font-mono text-[10px]">
-                    ⌘S
-                  </kbd>
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-3.5 w-3.5" />
+                    合併並儲存
+                    <kbd className="rounded bg-primary-foreground/20 px-1 font-mono text-[10px]">
+                      ⌘S
+                    </kbd>
+                  </>
+                )}
+              </Button>
+              <div
+                className={`overflow-hidden transition-all duration-200 ${
+                  isProcessing ? "max-w-24 opacity-100" : "max-w-0 opacity-0"
+                }`}
+              >
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={cancelCombine}
+                  className="gap-1 text-muted-foreground hover:text-destructive"
+                >
+                  <XCircle className="h-3.5 w-3.5" />
+                  取消
                 </Button>
-              )}
+              </div>
             </>
           )}
         </div>
