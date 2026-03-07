@@ -286,15 +286,85 @@ async fn get_image_preview(path: String) -> Result<String, String> {
     .map_err(|e| format!("Task failed: {}", e))?
 }
 
+#[tauri::command]
+async fn save_pasted_image(data: Vec<u8>, mime_type: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let ext = match mime_type.as_str() {
+            "image/png" => "png",
+            "image/gif" => "gif",
+            "image/webp" => "webp",
+            "image/bmp" => "bmp",
+            _ => "jpg",
+        };
+        let temp_dir = std::env::temp_dir().join("image-combiner-paste");
+        std::fs::create_dir_all(&temp_dir)
+            .map_err(|e| format!("Failed to create temp dir: {}", e))?;
+        let file_name = format!("pasted_{}.{}", chrono::Local::now().format("%Y%m%d_%H%M%S_%3f"), ext);
+        let file_path = temp_dir.join(&file_name);
+        std::fs::write(&file_path, &data)
+            .map_err(|e| format!("Failed to write temp file: {}", e))?;
+        Ok(file_path.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+
+            let settings = MenuItemBuilder::with_id("settings", "偏好設定…")
+                .accelerator("CmdOrCtrl+,")
+                .build(app)?;
+
+            let app_menu = SubmenuBuilder::new(app, "Image Combiner")
+                .item(&PredefinedMenuItem::about(app, None, None)?)
+                .separator()
+                .item(&settings)
+                .separator()
+                .item(&PredefinedMenuItem::hide(app, None)?)
+                .item(&PredefinedMenuItem::hide_others(app, None)?)
+                .item(&PredefinedMenuItem::show_all(app, None)?)
+                .separator()
+                .item(&PredefinedMenuItem::quit(app, None)?)
+                .build()?;
+
+            let edit_menu = SubmenuBuilder::new(app, "Edit")
+                .paste()
+                .select_all()
+                .build()?;
+
+            let window_menu = SubmenuBuilder::new(app, "Window")
+                .minimize()
+                .item(&PredefinedMenuItem::fullscreen(app, None)?)
+                .close_window()
+                .build()?;
+
+            let menu = MenuBuilder::new(app)
+                .item(&app_menu)
+                .item(&edit_menu)
+                .item(&window_menu)
+                .build()?;
+
+            app.set_menu(menu)?;
+
+            app.on_menu_event(move |app_handle, event| {
+                if event.id() == settings.id() {
+                    let _ = app_handle.emit("open-settings", ());
+                }
+            });
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_image_info,
             get_image_preview,
             combine_images,
             save_combined_image,
+            save_pasted_image,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

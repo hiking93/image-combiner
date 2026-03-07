@@ -17,14 +17,14 @@ import {
 import { Label } from "@/components/ui/label";
 import { Sun, Moon, Monitor } from "lucide-react";
 
-type Theme = "light" | "dark" | "system";
+export type Theme = "light" | "dark" | "system";
 
 const LANGUAGES = [
-  { code: "zh-TW", label: "繁體中文" },
   { code: "en", label: "English" },
+  { code: "zh-TW", label: "繁體中文" },
 ];
 
-function applyTheme(theme: Theme) {
+export function applyTheme(theme: Theme) {
   const root = document.documentElement;
   if (theme === "system") {
     const prefersDark = window.matchMedia(
@@ -97,13 +97,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 <button
                   key={value}
                   onClick={() => setTheme(value)}
-                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs transition-colors ${
+                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs leading-none transition-colors ${
                     theme === value
                       ? "bg-primary text-primary-foreground"
                       : "bg-muted text-muted-foreground hover:bg-muted/80"
                   }`}
                 >
-                  <Icon className="h-3.5 w-3.5" />
+                  <Icon className="h-3.5 w-3.5 shrink-0" />
                   {label}
                 </button>
               ))}

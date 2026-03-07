@@ -43,14 +43,20 @@ import {
   SelectValue,
 } from "./components/ui/select";
 import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "./components/ui/dropdown-menu";
+import {
   Download,
   Trash2,
   Images,
   Settings2,
-  Layers,
   Loader2,
   XCircle,
   Plus,
+  Menu,
 } from "lucide-react";
 import { Toaster, toast } from "sonner";
 
@@ -86,6 +92,14 @@ function App() {
   );
   const [selectedPreviewLoading, setSelectedPreviewLoading] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  useEffect(() => {
+    const unlisten = listen("open-settings", () => setSettingsOpen(true));
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
+
   const loadCancelRef = useRef(0);
   const combineCancelRef = useRef(false);
 
@@ -157,6 +171,34 @@ function App() {
       if (paths.length > 0) addImages(paths);
     }
   }, [addImages]);
+
+  useEffect(() => {
+    const handlePaste = async (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (!item.type.startsWith("image/")) continue;
+        e.preventDefault();
+        const blob = item.getAsFile();
+        if (!blob) continue;
+        const buffer = await blob.arrayBuffer();
+        const data = Array.from(new Uint8Array(buffer));
+        try {
+          const path = await invoke<string>("save_pasted_image", {
+            data,
+            mimeType: item.type,
+          });
+          addImages([path]);
+        } catch (err) {
+          toast.error(t("pasteFailed"), {
+            description: String(err),
+          });
+        }
+      }
+    };
+    document.addEventListener("paste", handlePaste);
+    return () => document.removeEventListener("paste", handlePaste);
+  }, [addImages, t]);
 
   const removeImage = useCallback((id: string) => {
     setImages((prev) => prev.filter((img) => img.id !== id));
@@ -350,17 +392,29 @@ function App() {
     <main className="flex h-screen flex-col bg-background">
       {/* Header */}
       <header className="flex shrink-0 items-center gap-3 border-b px-4 py-3">
+        <DropdownMenu>
+          <DropdownMenuTrigger className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground dark:hover:bg-muted/50">
+            <Menu className="h-4 w-4" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" sideOffset={8}>
+            <DropdownMenuItem onClick={() => setSettingsOpen(true)}>
+              <Settings2 className="h-4 w-4" />
+              {t("settings")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <div className="flex items-center gap-2">
-          <Layers className="h-5 w-5 text-primary" />
+          <svg
+            viewBox="0 0 20 20"
+            className="h-5 w-5 text-primary"
+            fill="currentColor"
+          >
+            <rect x="1" y="4" width="5" height="12" rx="1.2" opacity="0.7" />
+            <rect x="7.5" y="4" width="5" height="12" rx="1.2" opacity="0.5" />
+            <rect x="14" y="4" width="5" height="12" rx="1.2" opacity="0.7" />
+          </svg>
           <h1 className="text-sm font-semibold">Image Combiner</h1>
         </div>
-        <button
-          onClick={() => setSettingsOpen(true)}
-          className="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
-          title={t("settings")}
-        >
-          <Settings2 className="h-4 w-4" />
-        </button>
         {hasImages && (
           <Badge variant="secondary" className="gap-1">
             <Images className="h-3 w-3" />

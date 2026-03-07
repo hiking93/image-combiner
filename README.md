@@ -11,7 +11,7 @@ A desktop application for combining multiple images side-by-side horizontally in
 - **JPEG output** with adjustable quality (1-100%)
 - **PNG output** with lossless or lossy (quantization) mode
   - Lossy PNG supports dithering and max color count settings
-- **i18n**: Traditional Chinese (繁體中文) and English
+- **i18n**: English and Traditional Chinese (繁體中文)
 - **Theme**: Light / Dark / System
 
 ## Getting Started

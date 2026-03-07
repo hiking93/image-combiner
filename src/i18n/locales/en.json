@@ -23,6 +23,7 @@
   "preparing": "Preparing…",
   "saving": "Saving…",
   "loadFailed": "Failed to load {{fileName}}",
+  "pasteFailed": "Failed to paste image",
   "step": {
     "loading": "Loading images",
     "resizing": "Resizing images",
