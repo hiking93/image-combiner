@@ -65,17 +65,79 @@ fn encode_to_jpeg_base64(img: &DynamicImage, quality: u8) -> Result<String, Stri
     Ok(format!("data:image/jpeg;base64,{}", STANDARD.encode(&buf)))
 }
 
-fn encode_output(combined: &DynamicImage, format: &str, quality: u32) -> Result<Vec<u8>, String> {
+fn encode_png_lossy(combined: &DynamicImage, quality: u32) -> Result<Vec<u8>, String> {
+    let rgba = combined.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    let pixels: Vec<imagequant::RGBA> = rgba
+        .pixels()
+        .map(|p| imagequant::RGBA::new(p[0], p[1], p[2], p[3]))
+        .collect();
+
+    let mut attr = imagequant::Attributes::new();
+    attr.set_quality(0, quality.min(100) as u8)
+        .map_err(|e| format!("Failed to set quality: {}", e))?;
+    let mut img = attr
+        .new_image_borrowed(&pixels, width as usize, height as usize, 0.0)
+        .map_err(|e| format!("Failed to create quantization image: {}", e))?;
+    let mut res = attr
+        .quantize(&mut img)
+        .map_err(|e| format!("Failed to quantize: {}", e))?;
+    res.set_dithering_level(1.0)
+        .map_err(|e| format!("Failed to set dithering: {}", e))?;
+    let (palette, indexed_pixels) = res
+        .remapped(&mut img)
+        .map_err(|e| format!("Failed to remap: {}", e))?;
+
     let mut buf = Vec::new();
-    let mut cursor = Cursor::new(&mut buf);
+    {
+        let mut encoder = png::Encoder::new(&mut buf, width, height);
+        encoder.set_color(png::ColorType::Indexed);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder.set_compression(png::Compression::Best);
+
+        let mut plte = Vec::with_capacity(palette.len() * 3);
+        let mut trns = Vec::with_capacity(palette.len());
+        for c in &palette {
+            plte.extend_from_slice(&[c.r, c.g, c.b]);
+            trns.push(c.a);
+        }
+        encoder.set_palette(plte);
+        encoder.set_trns(trns);
+
+        let mut writer = encoder
+            .write_header()
+            .map_err(|e| format!("Failed to write PNG header: {}", e))?;
+        writer
+            .write_image_data(&indexed_pixels)
+            .map_err(|e| format!("Failed to write PNG data: {}", e))?;
+    }
+    Ok(buf)
+}
+
+fn encode_output(
+    combined: &DynamicImage,
+    format: &str,
+    quality: u32,
+    png_lossy: bool,
+) -> Result<Vec<u8>, String> {
+    let mut buf = Vec::new();
     match format {
+        "png" if png_lossy => {
+            return encode_png_lossy(combined, quality);
+        }
         "png" => {
+            let mut cursor = Cursor::new(&mut buf);
             combined
                 .to_rgba8()
-                .write_with_encoder(image::codecs::png::PngEncoder::new(&mut cursor))
+                .write_with_encoder(image::codecs::png::PngEncoder::new_with_quality(
+                    &mut cursor,
+                    image::codecs::png::CompressionType::Best,
+                    image::codecs::png::FilterType::Adaptive,
+                ))
                 .map_err(|e| format!("Failed to encode PNG: {}", e))?;
         }
         _ => {
+            let mut cursor = Cursor::new(&mut buf);
             combined
                 .to_rgb8()
                 .write_with_encoder(image::codecs::jpeg::JpegEncoder::new_with_quality(
@@ -134,6 +196,7 @@ async fn combine_images(
     output_height: u32,
     quality: u32,
     format: String,
+    png_lossy: bool,
 ) -> Result<Vec<u8>, String> {
     tokio::task::spawn_blocking(move || {
         let total = image_paths.len();
@@ -158,7 +221,7 @@ async fn combine_images(
 
         // Step 3: Encode
         emit_progress(&app, "encoding", 0, 1);
-        let result = encode_output(&combined, &format, quality)?;
+        let result = encode_output(&combined, &format, quality, png_lossy)?;
         emit_progress(&app, "encoding", 1, 1);
 
         Ok(result)

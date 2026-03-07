@@ -54,9 +54,10 @@ import { Toaster, toast } from "sonner";
 
 function App() {
   const [images, setImages] = useState<ImageItem[]>([]);
-  const [outputHeight, setOutputHeight] = useState(800);
+  const [outputHeight, setOutputHeight] = useState(0);
   const [quality, setQuality] = useState(85);
   const [format, setFormat] = useState<"jpeg" | "png">("jpeg");
+  const [pngLossy, setPngLossy] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processProgress, setProcessProgress] = useState("");
   const [loadingCount, setLoadingCount] = useState(0);
@@ -204,6 +205,7 @@ function App() {
         outputHeight: effectiveHeight,
         quality,
         format,
+        pngLossy,
       });
       if (combineCancelRef.current) return;
       setProcessProgress("儲存中…");
@@ -451,7 +453,6 @@ function App() {
                   placeholder={outputHeight === 0 ? String(maxImageHeight) : ""}
                   min={100}
                   max={10000}
-                  disabled={outputHeight === 0}
                 />
                 <p className="py-1 text-[11px] text-muted-foreground">
                   輸出尺寸：{estimatedWidth} × {effectiveHeight}
@@ -492,16 +493,37 @@ function App() {
                   onValueChange={(v) => setFormat(v as "jpeg" | "png")}
                 >
                   <SelectTrigger id="format">
-                    <SelectValue />
+                    <SelectValue>{format.toUpperCase()}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="jpeg">JPEG — 較小檔案</SelectItem>
-                    <SelectItem value="png">PNG — 無損品質</SelectItem>
+                    <SelectItem value="jpeg">JPEG</SelectItem>
+                    <SelectItem value="png">PNG</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
-              {format === "jpeg" && (
+              {format === "png" && (
+                <div className="space-y-2">
+                  <Label className="text-xs">PNG 壓縮模式</Label>
+                  <div className="flex gap-1.5">
+                    {([false, true] as const).map((lossy) => (
+                      <button
+                        key={String(lossy)}
+                        onClick={() => setPngLossy(lossy)}
+                        className={`flex-1 rounded-md px-2 py-1 text-[11px] transition-colors ${
+                          pngLossy === lossy
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted text-muted-foreground hover:bg-muted/80"
+                        }`}
+                      >
+                        {lossy ? "有損 (量化)" : "無損"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {(format === "jpeg" || (format === "png" && pngLossy)) && (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <Label className="text-xs">壓縮品質</Label>
