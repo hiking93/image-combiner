@@ -1,7 +1,443 @@
+import { useState, useCallback, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+  type DragStartEvent,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { SortableImage, type ImageItem } from "./components/SortableImage";
+import { DropZone } from "./components/DropZone";
+import { PreviewDialog } from "./components/PreviewDialog";
+import { Button } from "./components/ui/button";
+import { Input } from "./components/ui/input";
+import { Label } from "./components/ui/label";
+import { Separator } from "./components/ui/separator";
+import { Badge } from "./components/ui/badge";
+import { Slider } from "./components/ui/slider";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select";
+import {
+  Download,
+  Eye,
+  Trash2,
+  Images,
+  Settings2,
+  Layers,
+  Loader2,
+} from "lucide-react";
+import { Toaster, toast } from "sonner";
+
 function App() {
+  const [images, setImages] = useState<ImageItem[]>([]);
+  const [outputHeight, setOutputHeight] = useState(800);
+  const [quality, setQuality] = useState(85);
+  const [format, setFormat] = useState<"jpeg" | "png">("jpeg");
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processProgress, setProcessProgress] = useState("");
+  const [loadingCount, setLoadingCount] = useState(0);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [activeId, setActiveId] = useState<string | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
+
+  const addImages = useCallback(async (paths: string[]) => {
+    setLoadingCount((c) => c + paths.length);
+    await Promise.allSettled(
+      paths.map(async (path) => {
+        try {
+          const info = await invoke<{
+            width: number;
+            height: number;
+            file_size: number;
+            file_name: string;
+            thumbnail: string;
+          }>("get_image_info", { path });
+          setImages((prev) => [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              path,
+              thumbnail: info.thumbnail,
+              fileName: info.file_name,
+              width: info.width,
+              height: info.height,
+              fileSize: info.file_size,
+            },
+          ]);
+        } catch (e) {
+          const fileName = path.split("/").pop() || path;
+          toast.error(`無法載入 ${fileName}`, {
+            description: String(e),
+          });
+        } finally {
+          setLoadingCount((c) => c - 1);
+        }
+      }),
+    );
+  }, []);
+
+  const removeImage = useCallback((id: string) => {
+    setImages((prev) => prev.filter((img) => img.id !== id));
+  }, []);
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(String(event.active.id));
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setActiveId(null);
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setImages((items) => {
+        const oldIndex = items.findIndex((i) => i.id === active.id);
+        const newIndex = items.findIndex((i) => i.id === over.id);
+        return arrayMove(items, oldIndex, newIndex);
+      });
+    }
+  };
+
+  const handlePreview = async () => {
+    if (images.length === 0) return;
+    setPreviewOpen(true);
+    setPreviewLoading(true);
+    setPreviewSrc(null);
+    try {
+      const src = await invoke<string>("preview_combined", {
+        imagePaths: images.map((img) => img.path),
+        outputHeight,
+      });
+      setPreviewSrc(src);
+    } catch (e) {
+      console.error("Preview failed:", e);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const handleCombine = async () => {
+    if (images.length === 0) return;
+    setIsProcessing(true);
+    setProcessProgress("準備中…");
+
+    const stepLabels: Record<string, string> = {
+      loading: "讀取圖片",
+      resizing: "縮放圖片",
+      combining: "合併圖片",
+      encoding: "編碼輸出",
+    };
+
+    const unlisten = await listen<{
+      step: string;
+      current: number;
+      total: number;
+    }>("combine-progress", (event) => {
+      const { step, current, total } = event.payload;
+      const label = stepLabels[step] || step;
+      setProcessProgress(`${label} (${current}/${total})`);
+    });
+
+    try {
+      const data = await invoke<number[]>("combine_images", {
+        imagePaths: images.map((img) => img.path),
+        outputHeight,
+        quality,
+        format,
+      });
+      setProcessProgress("儲存中…");
+      await invoke("save_combined_image", { data, format });
+    } catch (e) {
+      const msg = String(e);
+      if (!msg.includes("cancelled")) {
+        console.error(e);
+      }
+    } finally {
+      unlisten();
+      setIsProcessing(false);
+      setProcessProgress("");
+    }
+  };
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+        e.preventDefault();
+        handleCombine();
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "p") {
+        e.preventDefault();
+        handlePreview();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [images, outputHeight, quality, format]);
+
+  const hasImages = images.length > 0;
+  const activeImage = activeId
+    ? images.find((img) => img.id === activeId)
+    : null;
+
   return (
-    <main className="flex h-screen items-center justify-center">
-      <h1>Hello World</h1>
+    <main className="flex h-screen flex-col bg-background">
+      {/* Header */}
+      <header className="flex shrink-0 items-center gap-3 border-b px-4 py-3">
+        <div className="flex items-center gap-2">
+          <Layers className="h-5 w-5 text-primary" />
+          <h1 className="text-sm font-semibold">Image Combiner</h1>
+        </div>
+        {hasImages && (
+          <Badge variant="secondary" className="gap-1">
+            <Images className="h-3 w-3" />
+            {images.length} 張圖片
+          </Badge>
+        )}
+        {loadingCount > 0 && (
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            正在載入 {loadingCount} 張圖片…
+          </div>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          {hasImages && (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setImages([])}
+                className="gap-1.5 text-muted-foreground hover:text-destructive"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                清除
+              </Button>
+              <Separator orientation="vertical" className="h-5" />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handlePreview}
+                className="gap-1.5"
+              >
+                <Eye className="h-3.5 w-3.5" />
+                預覽
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleCombine}
+                disabled={isProcessing}
+                className="gap-1.5"
+              >
+                {isProcessing ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    {processProgress || "處理中…"}
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-3.5 w-3.5" />
+                    合併並儲存
+                  </>
+                )}
+              </Button>
+            </>
+          )}
+        </div>
+      </header>
+
+      {/* Main content */}
+      <div className="flex min-h-0 flex-1">
+        {/* Image area */}
+        <div className="flex flex-1 flex-col overflow-hidden">
+          {!hasImages ? (
+            <div className="flex flex-1 items-center justify-center p-8">
+              <DropZone onDrop={addImages} className="w-full max-w-lg" />
+            </div>
+          ) : (
+            <div className="flex flex-1 flex-col gap-3 p-4">
+              <DropZone onDrop={addImages} compact />
+              <div className="flex-1 overflow-x-auto overflow-y-hidden rounded-lg border bg-muted/30 p-3">
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragStart={handleDragStart}
+                  onDragEnd={handleDragEnd}
+                >
+                  <SortableContext
+                    items={images}
+                    strategy={horizontalListSortingStrategy}
+                  >
+                    <div className="flex h-full items-center gap-3">
+                      {images.map((img, index) => (
+                        <SortableImage
+                          key={img.id}
+                          image={img}
+                          index={index + 1}
+                          onRemove={removeImage}
+                        />
+                      ))}
+                    </div>
+                  </SortableContext>
+                  <DragOverlay>
+                    {activeImage && (
+                      <div className="rounded-lg border bg-card shadow-2xl">
+                        <img
+                          src={activeImage.thumbnail}
+                          alt={activeImage.fileName}
+                          className="h-36 w-auto rounded-lg object-contain"
+                        />
+                      </div>
+                    )}
+                  </DragOverlay>
+                </DndContext>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Settings sidebar */}
+        {hasImages && (
+          <>
+            <Separator orientation="vertical" />
+            <aside className="flex w-64 shrink-0 flex-col gap-5 overflow-y-auto p-4">
+              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <Settings2 className="h-4 w-4" />
+                輸出設定
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="height" className="text-xs">
+                  輸出高度 (px)
+                </Label>
+                <Input
+                  id="height"
+                  type="number"
+                  value={outputHeight}
+                  onChange={(e) => setOutputHeight(Number(e.target.value))}
+                  min={100}
+                  max={10000}
+                />
+                <div className="flex flex-wrap gap-1.5">
+                  {[400, 600, 800, 1080, 1440, 2160].map((h) => (
+                    <button
+                      key={h}
+                      onClick={() => setOutputHeight(h)}
+                      className={`rounded-md px-2 py-0.5 text-[11px] transition-colors ${
+                        outputHeight === h
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted text-muted-foreground hover:bg-muted/80"
+                      }`}
+                    >
+                      {h}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="format" className="text-xs">
+                  輸出格式
+                </Label>
+                <Select
+                  value={format}
+                  onValueChange={(v) => setFormat(v as "jpeg" | "png")}
+                >
+                  <SelectTrigger id="format">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="jpeg">JPEG — 較小檔案</SelectItem>
+                    <SelectItem value="png">PNG — 無損品質</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {format === "jpeg" && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">壓縮品質</Label>
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      {quality}%
+                    </span>
+                  </div>
+                  <Slider
+                    value={[quality]}
+                    onValueChange={(v) =>
+                      setQuality(Array.isArray(v) ? v[0] : v)
+                    }
+                    min={1}
+                    max={100}
+                    step={1}
+                  />
+                  <div className="flex justify-between text-[10px] text-muted-foreground">
+                    <span>小檔案</span>
+                    <span>高品質</span>
+                  </div>
+                </div>
+              )}
+
+              <Separator />
+
+              <div className="space-y-1.5 text-xs text-muted-foreground">
+                <p className="font-medium text-foreground">快捷鍵</p>
+                <div className="space-y-1 text-[11px]">
+                  <div className="flex justify-between">
+                    <span>合併並儲存</span>
+                    <kbd className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">
+                      ⌘S
+                    </kbd>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>預覽</span>
+                    <kbd className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">
+                      ⌘P
+                    </kbd>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-1.5 text-xs text-muted-foreground">
+                <p className="font-medium text-foreground">使用說明</p>
+                <ul className="list-inside list-disc space-y-1 text-[11px]">
+                  <li>拖放或點擊上方區域新增圖片</li>
+                  <li>左右拖動圖片調整排列順序</li>
+                  <li>滑鼠移到圖片可看到詳細資訊</li>
+                  <li>圖片會等比例縮放至指定高度</li>
+                  <li>水平合併成一張圖片輸出</li>
+                </ul>
+              </div>
+            </aside>
+          </>
+        )}
+      </div>
+
+      {/* Preview dialog */}
+      <PreviewDialog
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        previewSrc={previewSrc}
+        isLoading={previewLoading}
+      />
+      <Toaster richColors position="bottom-right" />
     </main>
   );
 }

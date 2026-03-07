@@ -12,9 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "image-combiner",
-        "width": 800,
-        "height": 600
+        "title": "Image Combiner",
+        "width": 1000,
+        "height": 680,
+        "minWidth": 720,
+        "minHeight": 480
       }
     ],
     "security": {
