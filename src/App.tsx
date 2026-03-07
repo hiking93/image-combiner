@@ -1,6 +1,7 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   DndContext,
   closestCenter,
@@ -176,6 +177,26 @@ function App() {
       setProcessProgress("");
     }
   };
+
+  // Tauri file drag-and-drop
+  const addImagesRef = useRef(addImages);
+  addImagesRef.current = addImages;
+  useEffect(() => {
+    const IMAGE_EXTENSIONS = /\.(png|jpe?g|webp|bmp|gif|tiff?)$/i;
+    const unlisten = getCurrentWebviewWindow().onDragDropEvent((event) => {
+      if (event.payload.type === "drop") {
+        const paths = event.payload.paths.filter((p) =>
+          IMAGE_EXTENSIONS.test(p),
+        );
+        if (paths.length > 0) {
+          addImagesRef.current(paths);
+        }
+      }
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
