@@ -13,6 +13,7 @@
     "windows": [
       {
         "title": "Image Combiner",
+        "hiddenTitle": true,
         "width": 1000,
         "height": 680,
         "minWidth": 720,

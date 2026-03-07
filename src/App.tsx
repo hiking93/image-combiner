@@ -391,7 +391,10 @@ function App() {
   return (
     <main className="flex h-screen flex-col bg-background">
       {/* Header */}
-      <header className="flex shrink-0 items-center gap-3 border-b px-4 py-3">
+      <header
+        className="flex shrink-0 items-center gap-3 border-b px-4 py-3"
+        data-tauri-drag-region
+      >
         <DropdownMenu>
           <DropdownMenuTrigger className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground dark:hover:bg-muted/50">
             <Menu className="h-4 w-4" />

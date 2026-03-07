@@ -108,3 +108,8 @@ html.dark {
     @apply font-sans;
   }
 }
+
+[data-tauri-drag-region] {
+  app-region: drag;
+  -webkit-app-region: drag;
+}
