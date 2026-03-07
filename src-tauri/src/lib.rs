@@ -167,6 +167,15 @@ fn encode_output(
                 ))
                 .map_err(|e| format!("Failed to encode PNG: {}", e))?;
         }
+        "webp" => {
+            let mut cursor = Cursor::new(&mut buf);
+            combined
+                .to_rgba8()
+                .write_with_encoder(
+                    image::codecs::webp::WebPEncoder::new_lossless(&mut cursor),
+                )
+                .map_err(|e| format!("Failed to encode WebP: {}", e))?;
+        }
         _ => {
             let mut cursor = Cursor::new(&mut buf);
             combined
@@ -273,6 +282,7 @@ async fn save_combined_image(
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
     let (filter_name, extensions, default_name) = match format.as_str() {
         "png" => ("PNG Image", vec!["png"], format!("combined_{}.png", timestamp)),
+        "webp" => ("WebP Image", vec!["webp"], format!("combined_{}.webp", timestamp)),
         _ => ("JPEG Image", vec!["jpg", "jpeg"], format!("combined_{}.jpg", timestamp)),
     };
 

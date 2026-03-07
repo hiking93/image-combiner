@@ -81,9 +81,10 @@ function App() {
     const saved = localStorage.getItem("direction");
     return saved === "vertical" ? "vertical" : "horizontal";
   });
-  const [format, setFormat] = useState<"jpeg" | "png">(() => {
+  const [format, setFormat] = useState<"jpeg" | "png" | "webp">(() => {
     const saved = localStorage.getItem("format");
-    return saved === "png" ? "png" : "jpeg";
+    if (saved === "png" || saved === "webp") return saved;
+    return "jpeg";
   });
   const [pngLossy, setPngLossy] = useState(() => {
     return localStorage.getItem("pngLossy") !== "false";
@@ -837,14 +838,15 @@ function App() {
             </Label>
             <Select
               value={format}
-              onValueChange={(v) => setFormat(v as "jpeg" | "png")}
+              onValueChange={(v) => setFormat(v as "jpeg" | "png" | "webp")}
             >
               <SelectTrigger id="format">
-                <SelectValue>{format.toUpperCase()}</SelectValue>
+                <SelectValue>{t(`format.${format}`)}</SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="jpeg">JPEG</SelectItem>
-                <SelectItem value="png">PNG</SelectItem>
+                <SelectItem value="jpeg">{t("format.jpeg")}</SelectItem>
+                <SelectItem value="png">{t("format.png")}</SelectItem>
+                <SelectItem value="webp">{t("format.webp")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
