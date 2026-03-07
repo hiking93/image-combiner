@@ -10,7 +10,7 @@ import {
   useSensors,
   DragOverlay,
   type DragStartEvent,
-  type DragEndEvent,
+  type DragOverEvent,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -105,8 +105,7 @@ function App() {
     setActiveId(String(event.active.id));
   };
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    setActiveId(null);
+  const handleDragOver = (event: DragOverEvent) => {
     const { active, over } = event;
     if (over && active.id !== over.id) {
       setImages((items) => {
@@ -115,6 +114,10 @@ function App() {
         return arrayMove(items, oldIndex, newIndex);
       });
     }
+  };
+
+  const handleDragEnd = () => {
+    setActiveId(null);
   };
 
   const handlePreview = async () => {
@@ -222,9 +225,10 @@ function App() {
     const scale = effectiveHeight / img.height;
     return sum + Math.round(img.width * scale);
   }, 0);
-  const activeImage = activeId
-    ? images.find((img) => img.id === activeId)
-    : null;
+  const activeIndex = activeId
+    ? images.findIndex((img) => img.id === activeId)
+    : -1;
+  const activeImage = activeIndex >= 0 ? images[activeIndex] : null;
 
   return (
     <main className="flex h-screen flex-col bg-background">
@@ -307,6 +311,7 @@ function App() {
                   sensors={sensors}
                   collisionDetection={closestCenter}
                   onDragStart={handleDragStart}
+                  onDragOver={handleDragOver}
                   onDragEnd={handleDragEnd}
                 >
                   <SortableContext
@@ -326,7 +331,10 @@ function App() {
                   </SortableContext>
                   <DragOverlay>
                     {activeImage && (
-                      <div className="rounded-lg border bg-card shadow-2xl">
+                      <div className="relative rounded-lg border bg-card shadow-2xl">
+                        <div className="absolute left-1.5 top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-black/50 px-1 text-[10px] font-medium text-white">
+                          {activeIndex + 1}
+                        </div>
                         <img
                           src={activeImage.thumbnail}
                           alt={activeImage.fileName}

@@ -1,7 +1,7 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/utils";
-import { X, GripVertical } from "lucide-react";
+import { X } from "lucide-react";
 
 export interface ImageItem {
   id: string;
@@ -45,23 +45,17 @@ export function SortableImage({ image, index, onRemove }: SortableImageProps) {
       ref={setNodeRef}
       style={style}
       className={cn(
-        "group relative shrink-0 overflow-hidden rounded-lg border bg-card shadow-sm transition-all duration-200",
-        isDragging && "z-10 opacity-40",
-        !isDragging && "hover:shadow-md",
+        "group relative shrink-0 cursor-grab overflow-hidden rounded-lg border bg-card shadow-sm",
+        isDragging
+          ? "z-10 opacity-0"
+          : "transition-shadow duration-200 hover:shadow-md",
       )}
+      {...attributes}
+      {...listeners}
     >
       {/* Index badge */}
       <div className="absolute left-1.5 top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-black/50 px-1 text-[10px] font-medium text-white">
         {index}
-      </div>
-
-      {/* Drag handle */}
-      <div
-        className="absolute bottom-0 left-0 top-0 flex w-7 cursor-grab items-center justify-center bg-gradient-to-r from-black/30 to-transparent opacity-0 transition-opacity group-hover:opacity-100"
-        {...attributes}
-        {...listeners}
-      >
-        <GripVertical className="h-4 w-4 text-white drop-shadow" />
       </div>
 
       <img
