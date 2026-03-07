@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/utils";
@@ -26,6 +27,26 @@ function formatFileSize(bytes: number): string {
 }
 
 export function SortableImage({ image, index, onRemove }: SortableImageProps) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  const handleRemove = () => {
+    const el = ref.current;
+    if (!el) return onRemove(image.id);
+    const width = el.offsetWidth;
+    el.style.width = `${width}px`;
+    el.style.transition =
+      "transform 200ms ease-in, opacity 200ms ease-in, width 200ms ease-in, margin 200ms ease-in";
+    requestAnimationFrame(() => {
+      el.style.transform = "scale(0.5)";
+      el.style.opacity = "0";
+      el.style.width = "0px";
+      el.style.marginLeft = "-6px";
+    });
+    el.addEventListener("transitionend", () => onRemove(image.id), {
+      once: true,
+    });
+  };
+
   const {
     attributes,
     listeners,
@@ -42,13 +63,14 @@ export function SortableImage({ image, index, onRemove }: SortableImageProps) {
 
   return (
     <div
-      ref={setNodeRef}
+      ref={(node) => {
+        setNodeRef(node);
+        (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
+      }}
       style={style}
       className={cn(
-        "group relative shrink-0 cursor-grab overflow-hidden rounded-lg border bg-card shadow-sm",
-        isDragging
-          ? "z-10 opacity-0"
-          : "transition-shadow duration-200 hover:shadow-md",
+        "group relative shrink-0 cursor-grab overflow-hidden rounded-lg border bg-card shadow-sm animate-[scale-in_200ms_ease-out]",
+        isDragging ? "z-10 opacity-0" : "hover:shadow-md",
       )}
       {...attributes}
       {...listeners}
@@ -79,7 +101,7 @@ export function SortableImage({ image, index, onRemove }: SortableImageProps) {
       <button
         onClick={(e) => {
           e.stopPropagation();
-          onRemove(image.id);
+          handleRemove();
         }}
         className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/50 text-white opacity-0 transition-all hover:bg-destructive group-hover:opacity-100"
       >
