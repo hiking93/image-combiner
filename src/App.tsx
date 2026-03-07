@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
+import autoAnimate from "@formkit/auto-animate";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -21,7 +22,6 @@ import {
 } from "@dnd-kit/sortable";
 import { SortableImage, type ImageItem } from "./components/SortableImage";
 import { SettingsDialog } from "./components/SettingsDialog";
-import { Collapse } from "./components/Collapse";
 import {
   Dialog,
   DialogContent,
@@ -57,10 +57,25 @@ import { Toaster, toast } from "sonner";
 function App() {
   const { t } = useTranslation();
   const [images, setImages] = useState<ImageItem[]>([]);
-  const [outputHeight, setOutputHeight] = useState(0);
-  const [quality, setQuality] = useState(85);
-  const [format, setFormat] = useState<"jpeg" | "png">("jpeg");
-  const [pngLossy, setPngLossy] = useState(true);
+  const [outputHeight, setOutputHeight] = useState(() => {
+    return Number(localStorage.getItem("outputHeight")) || 0;
+  });
+  const [quality, setQuality] = useState(() => {
+    return Number(localStorage.getItem("quality")) || 85;
+  });
+  const [format, setFormat] = useState<"jpeg" | "png">(() => {
+    const saved = localStorage.getItem("format");
+    return saved === "png" ? "png" : "jpeg";
+  });
+  const [pngLossy, setPngLossy] = useState(() => {
+    return localStorage.getItem("pngLossy") !== "false";
+  });
+  const [dithering, setDithering] = useState(() => {
+    return Number(localStorage.getItem("dithering")) || 100;
+  });
+  const [maxColors, setMaxColors] = useState(() => {
+    return Number(localStorage.getItem("maxColors")) || 256;
+  });
   const [isProcessing, setIsProcessing] = useState(false);
   const [processProgress, setProcessProgress] = useState("");
   const [loadingCount, setLoadingCount] = useState(0);
@@ -205,6 +220,8 @@ function App() {
         quality,
         format,
         pngLossy,
+        dithering: dithering / 100,
+        maxColors,
       });
       if (combineCancelRef.current) return;
       setProcessProgress(t("saving"));
@@ -226,6 +243,26 @@ function App() {
     setIsProcessing(false);
     setProcessProgress("");
   }, []);
+
+  // Persist output settings
+  useEffect(() => {
+    localStorage.setItem("outputHeight", String(outputHeight));
+  }, [outputHeight]);
+  useEffect(() => {
+    localStorage.setItem("quality", String(quality));
+  }, [quality]);
+  useEffect(() => {
+    localStorage.setItem("format", format);
+  }, [format]);
+  useEffect(() => {
+    localStorage.setItem("pngLossy", String(pngLossy));
+  }, [pngLossy]);
+  useEffect(() => {
+    localStorage.setItem("dithering", String(dithering));
+  }, [dithering]);
+  useEffect(() => {
+    localStorage.setItem("maxColors", String(maxColors));
+  }, [maxColors]);
 
   // Tauri file drag-and-drop
   const addImagesRef = useRef(addImages);
@@ -260,6 +297,41 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [images, outputHeight, quality, format]);
 
+  const sidebarRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!sidebarRef.current) return;
+    const duration = 200;
+    const easing = "ease-out";
+    const controller = autoAnimate(
+      sidebarRef.current,
+      (el, action, oldCoords, newCoords) => {
+        if (action === "add") {
+          return new KeyframeEffect(el, [{ opacity: 0 }, { opacity: 1 }], {
+            duration,
+            easing,
+          });
+        }
+        if (action === "remove") {
+          return new KeyframeEffect(el, [{ opacity: 1 }, { opacity: 0 }], {
+            duration,
+            easing,
+          });
+        }
+        const dy = oldCoords && newCoords ? oldCoords.top - newCoords.top : 0;
+        return new KeyframeEffect(
+          el,
+          dy
+            ? [
+                { transform: `translateY(${dy}px)` },
+                { transform: "translateY(0)" },
+              ]
+            : [],
+          { duration, easing },
+        );
+      },
+    );
+    return () => controller.destroy();
+  }, []);
   const hasImages = images.length > 0;
   const maxImageHeight = Math.max(0, ...images.map((img) => img.height));
   const effectiveHeight = outputHeight === 0 ? maxImageHeight : outputHeight;
@@ -267,10 +339,6 @@ function App() {
     const scale = effectiveHeight / img.height;
     return sum + Math.round(img.width * scale);
   }, 0);
-  const lastSizeRef = useRef({ width: 0, height: 0 });
-  if (hasImages) {
-    lastSizeRef.current = { width: estimatedWidth, height: effectiveHeight };
-  }
   const activeIndex = activeId
     ? images.findIndex((img) => img.id === activeId)
     : -1;
@@ -422,13 +490,16 @@ function App() {
 
         {/* Settings sidebar */}
         <Separator orientation="vertical" />
-        <aside className="flex w-64 shrink-0 flex-col overflow-y-auto p-4">
+        <aside
+          ref={sidebarRef}
+          className="flex w-64 shrink-0 flex-col gap-5 overflow-y-auto p-4"
+        >
           <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
             <Settings2 className="h-4 w-4" />
             {t("outputSettings")}
           </div>
 
-          <div className="mt-5 space-y-2">
+          <div className="space-y-2">
             <Label htmlFor="height" className="text-xs">
               {t("outputHeight")}
             </Label>
@@ -441,15 +512,7 @@ function App() {
               min={100}
               max={10000}
             />
-            <Collapse open={hasImages}>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                {t("outputSize", {
-                  width: lastSizeRef.current.width,
-                  height: lastSizeRef.current.height,
-                })}
-              </p>
-            </Collapse>
-            <div className="mt-1 flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-1.5">
               <button
                 onClick={() => setOutputHeight(0)}
                 className={`rounded-md px-2 py-0.5 text-[11px] transition-colors ${
@@ -476,7 +539,16 @@ function App() {
             </div>
           </div>
 
-          <div className="mt-5 space-y-2">
+          {hasImages && (
+            <p className="-mt-3 text-[11px] text-muted-foreground">
+              {t("outputSize", {
+                width: estimatedWidth,
+                height: effectiveHeight,
+              })}
+            </p>
+          )}
+
+          <div className="space-y-2">
             <Label htmlFor="format" className="text-xs">
               {t("outputFormat")}
             </Label>
@@ -494,8 +566,8 @@ function App() {
             </Select>
           </div>
 
-          <Collapse open={format === "png"}>
-            <div className="mt-3 space-y-2">
+          {format === "png" && (
+            <div className="space-y-2">
               <Label className="text-xs">{t("pngCompression")}</Label>
               <div className="flex gap-1.5">
                 {([false, true] as const).map((lossy) => (
@@ -513,10 +585,10 @@ function App() {
                 ))}
               </div>
             </div>
-          </Collapse>
+          )}
 
-          <Collapse open={format === "jpeg" || (format === "png" && pngLossy)}>
-            <div className="mt-5 space-y-3">
+          {(format === "jpeg" || (format === "png" && pngLossy)) && (
+            <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <Label className="text-xs">{t("quality")}</Label>
                 <span className="text-xs tabular-nums text-muted-foreground">
@@ -535,7 +607,43 @@ function App() {
                 <span>{t("highQuality")}</span>
               </div>
             </div>
-          </Collapse>
+          )}
+
+          {format === "png" && pngLossy && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">{t("dithering")}</Label>
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {dithering}%
+                </span>
+              </div>
+              <Slider
+                value={[dithering]}
+                onValueChange={(v) => setDithering(Array.isArray(v) ? v[0] : v)}
+                min={0}
+                max={100}
+                step={1}
+              />
+            </div>
+          )}
+
+          {format === "png" && pngLossy && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">{t("maxColors")}</Label>
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {maxColors}
+                </span>
+              </div>
+              <Slider
+                value={[maxColors]}
+                onValueChange={(v) => setMaxColors(Array.isArray(v) ? v[0] : v)}
+                min={2}
+                max={256}
+                step={1}
+              />
+            </div>
+          )}
         </aside>
       </div>
 

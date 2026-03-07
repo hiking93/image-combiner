@@ -65,7 +65,12 @@ fn encode_to_jpeg_base64(img: &DynamicImage, quality: u8) -> Result<String, Stri
     Ok(format!("data:image/jpeg;base64,{}", STANDARD.encode(&buf)))
 }
 
-fn encode_png_lossy(combined: &DynamicImage, quality: u32) -> Result<Vec<u8>, String> {
+fn encode_png_lossy(
+    combined: &DynamicImage,
+    quality: u32,
+    dithering: f32,
+    max_colors: u32,
+) -> Result<Vec<u8>, String> {
     let rgba = combined.to_rgba8();
     let (width, height) = rgba.dimensions();
     let pixels: Vec<imagequant::RGBA> = rgba
@@ -76,13 +81,15 @@ fn encode_png_lossy(combined: &DynamicImage, quality: u32) -> Result<Vec<u8>, St
     let mut attr = imagequant::Attributes::new();
     attr.set_quality(0, quality.min(100) as u8)
         .map_err(|e| format!("Failed to set quality: {}", e))?;
+    attr.set_max_colors(max_colors.clamp(2, 256) as u32)
+        .map_err(|e| format!("Failed to set max colors: {}", e))?;
     let mut img = attr
         .new_image_borrowed(&pixels, width as usize, height as usize, 0.0)
         .map_err(|e| format!("Failed to create quantization image: {}", e))?;
     let mut res = attr
         .quantize(&mut img)
         .map_err(|e| format!("Failed to quantize: {}", e))?;
-    res.set_dithering_level(1.0)
+    res.set_dithering_level(dithering.clamp(0.0, 1.0))
         .map_err(|e| format!("Failed to set dithering: {}", e))?;
     let (palette, indexed_pixels) = res
         .remapped(&mut img)
@@ -119,11 +126,13 @@ fn encode_output(
     format: &str,
     quality: u32,
     png_lossy: bool,
+    dithering: f32,
+    max_colors: u32,
 ) -> Result<Vec<u8>, String> {
     let mut buf = Vec::new();
     match format {
         "png" if png_lossy => {
-            return encode_png_lossy(combined, quality);
+            return encode_png_lossy(combined, quality, dithering, max_colors);
         }
         "png" => {
             let mut cursor = Cursor::new(&mut buf);
@@ -197,6 +206,8 @@ async fn combine_images(
     quality: u32,
     format: String,
     png_lossy: bool,
+    dithering: f32,
+    max_colors: u32,
 ) -> Result<Vec<u8>, String> {
     tokio::task::spawn_blocking(move || {
         let total = image_paths.len();
@@ -221,7 +232,7 @@ async fn combine_images(
 
         // Step 3: Encode
         emit_progress(&app, "encoding", 0, 1);
-        let result = encode_output(&combined, &format, quality, png_lossy)?;
+        let result = encode_output(&combined, &format, quality, png_lossy, dithering, max_colors)?;
         emit_progress(&app, "encoding", 1, 1);
 
         Ok(result)

@@ -18,6 +18,8 @@
   "quality": "Quality",
   "smallFile": "Small file",
   "highQuality": "High quality",
+  "dithering": "Dithering",
+  "maxColors": "Max Colors",
   "preparing": "Preparing…",
   "saving": "Saving…",
   "loadFailed": "Failed to load {{fileName}}",
