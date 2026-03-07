@@ -295,6 +295,9 @@ function App() {
               >
                 <Eye className="h-3.5 w-3.5" />
                 預覽
+                <kbd className="rounded bg-muted px-1 font-mono text-[10px] text-muted-foreground">
+                  ⌘P
+                </kbd>
               </Button>
               <Button
                 size="sm"
@@ -311,6 +314,9 @@ function App() {
                   <>
                     <Download className="h-3.5 w-3.5" />
                     合併並儲存
+                    <kbd className="rounded bg-primary-foreground/20 px-1 font-mono text-[10px]">
+                      ⌘S
+                    </kbd>
                   </>
                 )}
               </Button>
@@ -469,37 +475,6 @@ function App() {
                   </div>
                 </div>
               )}
-
-              <Separator />
-
-              <div className="space-y-1.5 text-xs text-muted-foreground">
-                <p className="font-medium text-foreground">快捷鍵</p>
-                <div className="space-y-1 text-[11px]">
-                  <div className="flex justify-between">
-                    <span>合併並儲存</span>
-                    <kbd className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">
-                      ⌘S
-                    </kbd>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>預覽</span>
-                    <kbd className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">
-                      ⌘P
-                    </kbd>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-1.5 text-xs text-muted-foreground">
-                <p className="font-medium text-foreground">使用說明</p>
-                <ul className="list-inside list-disc space-y-1 text-[11px]">
-                  <li>拖放或點擊上方區域新增圖片</li>
-                  <li>左右拖動圖片調整排列順序</li>
-                  <li>滑鼠移到圖片可看到詳細資訊</li>
-                  <li>圖片會等比例縮放至指定高度</li>
-                  <li>水平合併成一張圖片輸出</li>
-                </ul>
-              </div>
             </aside>
           </>
         )}
