@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { open } from "@tauri-apps/plugin-dialog";
 import {
   DndContext,
   closestCenter,
@@ -18,7 +19,6 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { SortableImage, type ImageItem } from "./components/SortableImage";
-import { DropZone } from "./components/DropZone";
 import { PreviewDialog } from "./components/PreviewDialog";
 import {
   Dialog,
@@ -49,6 +49,7 @@ import {
   Layers,
   Loader2,
   XCircle,
+  Plus,
 } from "lucide-react";
 import { Toaster, toast } from "sonner";
 
@@ -122,6 +123,22 @@ function App() {
     loadCancelRef.current++;
     setLoadingCount(0);
   }, []);
+
+  const pickFiles = useCallback(async () => {
+    const selected = await open({
+      multiple: true,
+      filters: [
+        {
+          name: "Images",
+          extensions: ["png", "jpg", "jpeg", "webp", "bmp", "gif", "tiff"],
+        },
+      ],
+    });
+    if (selected) {
+      const paths = Array.isArray(selected) ? selected : [selected];
+      if (paths.length > 0) addImages(paths);
+    }
+  }, [addImages]);
 
   const removeImage = useCallback((id: string) => {
     setImages((prev) => prev.filter((img) => img.id !== id));
@@ -383,56 +400,54 @@ function App() {
       {/* Main content */}
       <div className="flex min-h-0 flex-1">
         {/* Image area */}
-        <div className="flex flex-1 flex-col overflow-hidden">
-          {!hasImages ? (
-            <div className="flex flex-1 items-center justify-center p-8">
-              <DropZone onDrop={addImages} className="w-full max-w-lg" />
-            </div>
-          ) : (
-            <div className="flex flex-1 flex-col gap-3 p-4">
-              <DropZone onDrop={addImages} compact />
-              <div className="flex-1 overflow-x-auto overflow-y-hidden rounded-lg border bg-muted/30">
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragStart={handleDragStart}
-                  onDragOver={handleDragOver}
-                  onDragEnd={handleDragEnd}
-                >
-                  <SortableContext
-                    items={images}
-                    strategy={horizontalListSortingStrategy}
+        <div className="flex flex-1 flex-col overflow-hidden p-4">
+          <div className="flex-1 overflow-x-auto overflow-y-hidden rounded-lg border bg-muted/30">
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={images}
+                strategy={horizontalListSortingStrategy}
+              >
+                <div className="flex h-full w-max min-w-full items-center justify-center gap-3 p-3">
+                  {images.map((img, index) => (
+                    <SortableImage
+                      key={img.id}
+                      image={img}
+                      index={index + 1}
+                      onRemove={removeImage}
+                      onSelect={handleSelectImage}
+                    />
+                  ))}
+                  {/* Add button */}
+                  <button
+                    onClick={pickFiles}
+                    className="flex h-48 w-32 shrink-0 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-muted-foreground text-muted-foreground opacity-40 transition-all hover:opacity-60 hover:bg-muted/50"
                   >
-                    <div className="flex h-full w-max min-w-full items-center justify-center gap-3 p-3">
-                      {images.map((img, index) => (
-                        <SortableImage
-                          key={img.id}
-                          image={img}
-                          index={index + 1}
-                          onRemove={removeImage}
-                          onSelect={handleSelectImage}
-                        />
-                      ))}
+                    <Plus className="h-8 w-8" />
+                  </button>
+                </div>
+              </SortableContext>
+              <DragOverlay>
+                {activeImage && (
+                  <div className="relative rounded-lg border bg-card shadow-2xl">
+                    <div className="absolute left-1.5 top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-black/50 px-1 text-[10px] font-medium text-white">
+                      {activeIndex + 1}
                     </div>
-                  </SortableContext>
-                  <DragOverlay>
-                    {activeImage && (
-                      <div className="relative rounded-lg border bg-card shadow-2xl">
-                        <div className="absolute left-1.5 top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-black/50 px-1 text-[10px] font-medium text-white">
-                          {activeIndex + 1}
-                        </div>
-                        <img
-                          src={activeImage.thumbnail}
-                          alt={activeImage.fileName}
-                          className="h-48 w-auto rounded-lg object-contain"
-                        />
-                      </div>
-                    )}
-                  </DragOverlay>
-                </DndContext>
-              </div>
-            </div>
-          )}
+                    <img
+                      src={activeImage.thumbnail}
+                      alt={activeImage.fileName}
+                      className="h-48 w-auto rounded-lg object-contain"
+                    />
+                  </div>
+                )}
+              </DragOverlay>
+            </DndContext>
+          </div>
         </div>
 
         {/* Settings sidebar */}
