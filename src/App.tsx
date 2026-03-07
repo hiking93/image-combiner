@@ -125,7 +125,7 @@ function App() {
     try {
       const src = await invoke<string>("preview_combined", {
         imagePaths: images.map((img) => img.path),
-        outputHeight,
+        outputHeight: effectiveHeight,
       });
       setPreviewSrc(src);
     } catch (e) {
@@ -160,7 +160,7 @@ function App() {
     try {
       const data = await invoke<number[]>("combine_images", {
         imagePaths: images.map((img) => img.path),
-        outputHeight,
+        outputHeight: effectiveHeight,
         quality,
         format,
       });
@@ -216,6 +216,12 @@ function App() {
   }, [images, outputHeight, quality, format]);
 
   const hasImages = images.length > 0;
+  const maxImageHeight = Math.max(0, ...images.map((img) => img.height));
+  const effectiveHeight = outputHeight === 0 ? maxImageHeight : outputHeight;
+  const estimatedWidth = images.reduce((sum, img) => {
+    const scale = effectiveHeight / img.height;
+    return sum + Math.round(img.width * scale);
+  }, 0);
   const activeImage = activeId
     ? images.find((img) => img.id === activeId)
     : null;
@@ -352,12 +358,27 @@ function App() {
                 <Input
                   id="height"
                   type="number"
-                  value={outputHeight}
+                  value={outputHeight === 0 ? "" : outputHeight}
                   onChange={(e) => setOutputHeight(Number(e.target.value))}
+                  placeholder={outputHeight === 0 ? String(maxImageHeight) : ""}
                   min={100}
                   max={10000}
+                  disabled={outputHeight === 0}
                 />
+                <p className="py-1 text-[11px] text-muted-foreground">
+                  輸出尺寸：{estimatedWidth} × {effectiveHeight}
+                </p>
                 <div className="flex flex-wrap gap-1.5">
+                  <button
+                    onClick={() => setOutputHeight(0)}
+                    className={`rounded-md px-2 py-0.5 text-[11px] transition-colors ${
+                      outputHeight === 0
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground hover:bg-muted/80"
+                    }`}
+                  >
+                    原始最高
+                  </button>
                   {[400, 600, 800, 1080, 1440, 2160].map((h) => (
                     <button
                       key={h}
