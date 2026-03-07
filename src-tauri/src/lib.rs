@@ -27,6 +27,8 @@ struct ImageInfo {
 fn load_and_decode(path: &str) -> Result<DynamicImage, String> {
     ImageReader::open(path)
         .map_err(|e| format!("Failed to open {}: {}", path, e))?
+        .with_guessed_format()
+        .map_err(|e| format!("Failed to detect format {}: {}", path, e))?
         .decode()
         .map_err(|e| format!("Failed to decode {}: {}", path, e))
 }
@@ -220,12 +222,24 @@ async fn save_combined_image(
     }
 }
 
+#[tauri::command]
+async fn get_image_preview(path: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let img = load_and_decode(&path)?;
+        let preview = img.thumbnail(u32::MAX, 1200);
+        encode_to_jpeg_base64(&preview, 90)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             get_image_info,
+            get_image_preview,
             combine_images,
             preview_combined,
             save_combined_image,

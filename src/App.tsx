@@ -20,6 +20,13 @@ import {
 import { SortableImage, type ImageItem } from "./components/SortableImage";
 import { DropZone } from "./components/DropZone";
 import { PreviewDialog } from "./components/PreviewDialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "./components/ui/dialog";
+import { ZoomableImage } from "./components/ZoomableImage";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { Label } from "./components/ui/label";
@@ -56,6 +63,10 @@ function App() {
   const [previewSrc, setPreviewSrc] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null);
+  const [selectedPreviewSrc, setSelectedPreviewSrc] = useState<string | null>(
+    null,
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -119,6 +130,19 @@ function App() {
   const handleDragEnd = () => {
     setActiveId(null);
   };
+
+  const handleSelectImage = useCallback(async (image: ImageItem) => {
+    setSelectedImage(image);
+    setSelectedPreviewSrc(image.thumbnail);
+    try {
+      const src = await invoke<string>("get_image_preview", {
+        path: image.path,
+      });
+      setSelectedPreviewSrc(src);
+    } catch {
+      // keep thumbnail as fallback
+    }
+  }, []);
 
   const handlePreview = async () => {
     if (images.length === 0) return;
@@ -325,6 +349,7 @@ function App() {
                           image={img}
                           index={index + 1}
                           onRemove={removeImage}
+                          onSelect={handleSelectImage}
                         />
                       ))}
                     </div>
@@ -338,7 +363,7 @@ function App() {
                         <img
                           src={activeImage.thumbnail}
                           alt={activeImage.fileName}
-                          className="h-36 w-auto rounded-lg object-contain"
+                          className="h-48 w-auto rounded-lg object-contain"
                         />
                       </div>
                     )}
@@ -480,7 +505,43 @@ function App() {
         )}
       </div>
 
-      {/* Preview dialog */}
+      {/* Image preview dialog */}
+      <Dialog
+        open={!!selectedImage}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedImage(null);
+            setSelectedPreviewSrc(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[70vw]">
+          <DialogHeader>
+            <DialogTitle>{selectedImage?.fileName}</DialogTitle>
+          </DialogHeader>
+          <div className="flex h-[70vh] items-center justify-center rounded-lg bg-muted/50">
+            {selectedPreviewSrc ? (
+              <ZoomableImage
+                src={selectedPreviewSrc}
+                alt={selectedImage?.fileName}
+                className="h-full w-full rounded-lg"
+              />
+            ) : (
+              <p className="py-12 text-sm text-muted-foreground">載入中...</p>
+            )}
+          </div>
+          {selectedImage && (
+            <p className="text-center text-xs text-muted-foreground">
+              {selectedImage.width} × {selectedImage.height} ·{" "}
+              {selectedImage.fileSize < 1024 * 1024
+                ? `${(selectedImage.fileSize / 1024).toFixed(1)} KB`
+                : `${(selectedImage.fileSize / (1024 * 1024)).toFixed(1)} MB`}
+            </p>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Combined preview dialog */}
       <PreviewDialog
         open={previewOpen}
         onOpenChange={setPreviewOpen}

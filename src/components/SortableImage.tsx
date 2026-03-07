@@ -18,6 +18,7 @@ interface SortableImageProps {
   image: ImageItem;
   index: number;
   onRemove: (id: string) => void;
+  onSelect: (image: ImageItem) => void;
 }
 
 function formatFileSize(bytes: number): string {
@@ -26,8 +27,14 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function SortableImage({ image, index, onRemove }: SortableImageProps) {
+export function SortableImage({
+  image,
+  index,
+  onRemove,
+  onSelect,
+}: SortableImageProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const didDrag = useRef(false);
 
   const handleRemove = () => {
     const el = ref.current;
@@ -74,6 +81,17 @@ export function SortableImage({ image, index, onRemove }: SortableImageProps) {
       )}
       {...attributes}
       {...listeners}
+      onPointerDown={(e) => {
+        didDrag.current = false;
+        listeners?.onPointerDown?.(e);
+      }}
+      onPointerMove={(e) => {
+        didDrag.current = true;
+        listeners?.onPointerMove?.(e);
+      }}
+      onClick={() => {
+        if (!didDrag.current) onSelect(image);
+      }}
     >
       {/* Index badge */}
       <div className="absolute left-1.5 top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-black/50 px-1 text-[10px] font-medium text-white">
@@ -83,7 +101,7 @@ export function SortableImage({ image, index, onRemove }: SortableImageProps) {
       <img
         src={image.thumbnail}
         alt={image.fileName}
-        className="h-36 w-auto object-contain"
+        className="h-48 w-auto object-contain"
         draggable={false}
       />
 
