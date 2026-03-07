@@ -176,6 +176,26 @@ fn encode_output(
                 )
                 .map_err(|e| format!("Failed to encode WebP: {}", e))?;
         }
+        "avif" => {
+            let mut cursor = Cursor::new(&mut buf);
+            combined
+                .to_rgba8()
+                .write_with_encoder(
+                    image::codecs::avif::AvifEncoder::new_with_speed_quality(
+                        &mut cursor,
+                        4,
+                        quality as u8,
+                    ),
+                )
+                .map_err(|e| format!("Failed to encode AVIF: {}", e))?;
+        }
+        "tiff" => {
+            let mut cursor = Cursor::new(&mut buf);
+            combined
+                .to_rgba8()
+                .write_with_encoder(image::codecs::tiff::TiffEncoder::new(&mut cursor))
+                .map_err(|e| format!("Failed to encode TIFF: {}", e))?;
+        }
         _ => {
             let mut cursor = Cursor::new(&mut buf);
             combined
@@ -283,6 +303,8 @@ async fn save_combined_image(
     let (filter_name, extensions, default_name) = match format.as_str() {
         "png" => ("PNG Image", vec!["png"], format!("combined_{}.png", timestamp)),
         "webp" => ("WebP Image", vec!["webp"], format!("combined_{}.webp", timestamp)),
+        "avif" => ("AVIF Image", vec!["avif"], format!("combined_{}.avif", timestamp)),
+        "tiff" => ("TIFF Image", vec!["tiff", "tif"], format!("combined_{}.tiff", timestamp)),
         _ => ("JPEG Image", vec!["jpg", "jpeg"], format!("combined_{}.jpg", timestamp)),
     };
 

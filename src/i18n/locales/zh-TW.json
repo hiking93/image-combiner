@@ -20,6 +20,8 @@
   "format.jpeg": "JPEG",
   "format.png": "PNG",
   "format.webp": "WebP",
+  "format.avif": "AVIF",
+  "format.tiff": "TIFF",
   "pngCompression": "PNG 壓縮模式",
   "lossy": "有損 (量化)",
   "lossless": "無損",

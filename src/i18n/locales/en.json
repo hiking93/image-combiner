@@ -20,6 +20,8 @@
   "format.jpeg": "JPEG",
   "format.png": "PNG",
   "format.webp": "WebP",
+  "format.avif": "AVIF",
+  "format.tiff": "TIFF",
   "pngCompression": "PNG Compression",
   "lossy": "Lossy (Quantize)",
   "lossless": "Lossless",

@@ -81,9 +81,17 @@ function App() {
     const saved = localStorage.getItem("direction");
     return saved === "vertical" ? "vertical" : "horizontal";
   });
-  const [format, setFormat] = useState<"jpeg" | "png" | "webp">(() => {
+  const [format, setFormat] = useState<
+    "jpeg" | "png" | "webp" | "avif" | "tiff"
+  >(() => {
     const saved = localStorage.getItem("format");
-    if (saved === "png" || saved === "webp") return saved;
+    if (
+      saved === "png" ||
+      saved === "webp" ||
+      saved === "avif" ||
+      saved === "tiff"
+    )
+      return saved;
     return "jpeg";
   });
   const [pngLossy, setPngLossy] = useState(() => {
@@ -838,7 +846,7 @@ function App() {
             </Label>
             <Select
               value={format}
-              onValueChange={(v) => setFormat(v as "jpeg" | "png" | "webp")}
+              onValueChange={(v) => setFormat(v as typeof format)}
             >
               <SelectTrigger id="format">
                 <SelectValue>{t(`format.${format}`)}</SelectValue>
@@ -847,6 +855,8 @@ function App() {
                 <SelectItem value="jpeg">{t("format.jpeg")}</SelectItem>
                 <SelectItem value="png">{t("format.png")}</SelectItem>
                 <SelectItem value="webp">{t("format.webp")}</SelectItem>
+                <SelectItem value="avif">{t("format.avif")}</SelectItem>
+                <SelectItem value="tiff">{t("format.tiff")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -872,7 +882,9 @@ function App() {
             </div>
           )}
 
-          {(format === "jpeg" || (format === "png" && pngLossy)) && (
+          {(format === "jpeg" ||
+            format === "avif" ||
+            (format === "png" && pngLossy)) && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <Label className="text-xs">{t("quality")}</Label>
