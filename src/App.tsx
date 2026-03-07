@@ -112,6 +112,8 @@ function App() {
     };
   }, []);
 
+  const saveButtonRef = useRef<HTMLButtonElement>(null);
+
   const loadCancelRef = useRef(0);
   const combineCancelRef = useRef(false);
 
@@ -397,6 +399,22 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [direction]);
 
+  // Animate save button width changes
+  const saveButtonWidthRef = useRef<number>(0);
+  useLayoutEffect(() => {
+    const btn = saveButtonRef.current;
+    if (!btn) return;
+    const oldWidth = saveButtonWidthRef.current;
+    const newWidth = btn.offsetWidth;
+    saveButtonWidthRef.current = newWidth;
+    if (oldWidth > 0 && oldWidth !== newWidth) {
+      btn.animate([{ width: `${oldWidth}px` }, { width: `${newWidth}px` }], {
+        duration: 200,
+        easing: "ease-out",
+      });
+    }
+  });
+
   // Persist output settings
   useEffect(() => {
     localStorage.setItem("direction", direction);
@@ -622,8 +640,9 @@ function App() {
             <Trash2 className="h-3.5 w-3.5" />
             {t("clear")}
           </Button>
-          <Separator orientation="vertical" className="h-5" />
+          <Separator orientation="vertical" className="self-stretch" />
           <Button
+            ref={saveButtonRef}
             size="sm"
             onClick={isProcessing ? undefined : handleCombine}
             disabled={!hasImages || isProcessing}
