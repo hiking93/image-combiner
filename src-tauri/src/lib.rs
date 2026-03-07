@@ -195,16 +195,17 @@ async fn save_combined_image(
     data: Vec<u8>,
     format: String,
 ) -> Result<String, String> {
+    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
     let (filter_name, extensions, default_name) = match format.as_str() {
-        "png" => ("PNG Image", vec!["png"], "combined.png"),
-        _ => ("JPEG Image", vec!["jpg", "jpeg"], "combined.jpg"),
+        "png" => ("PNG Image", vec!["png"], format!("combined_{}.png", timestamp)),
+        _ => ("JPEG Image", vec!["jpg", "jpeg"], format!("combined_{}.jpg", timestamp)),
     };
 
     let file_path = app
         .dialog()
         .file()
         .add_filter(filter_name, &extensions)
-        .set_file_name(default_name)
+        .set_file_name(&default_name)
         .blocking_save_file();
 
     match file_path {
