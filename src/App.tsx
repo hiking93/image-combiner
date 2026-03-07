@@ -519,11 +519,19 @@ function App() {
       const newRect = child.getBoundingClientRect();
       const dx = oldRect.left - newRect.left;
       const dy = oldRect.top - newRect.top;
-      if (dx === 0 && dy === 0) continue;
+      const sx = oldRect.width / newRect.width;
+      const sy = oldRect.height / newRect.height;
+      if (dx === 0 && dy === 0 && sx === 1 && sy === 1) continue;
       (child as HTMLElement).animate(
         [
-          { transform: `translate(${dx}px, ${dy}px)` },
-          { transform: "translate(0, 0)" },
+          {
+            transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`,
+            transformOrigin: "top left",
+          },
+          {
+            transform: "translate(0, 0) scale(1, 1)",
+            transformOrigin: "top left",
+          },
         ],
         { duration: 250, easing: "ease-out" },
       );
