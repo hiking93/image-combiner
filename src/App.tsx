@@ -21,6 +21,7 @@ import {
 } from "@dnd-kit/sortable";
 import { SortableImage, type ImageItem } from "./components/SortableImage";
 import { SettingsDialog } from "./components/SettingsDialog";
+import { Collapse } from "./components/Collapse";
 import {
   Dialog,
   DialogContent,
@@ -266,6 +267,10 @@ function App() {
     const scale = effectiveHeight / img.height;
     return sum + Math.round(img.width * scale);
   }, 0);
+  const lastSizeRef = useRef({ width: 0, height: 0 });
+  if (hasImages) {
+    lastSizeRef.current = { width: estimatedWidth, height: effectiveHeight };
+  }
   const activeIndex = activeId
     ? images.findIndex((img) => img.id === activeId)
     : -1;
@@ -312,56 +317,53 @@ function App() {
           </button>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          {hasImages && (
-            <>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setImages([])}
-                className="gap-1.5 text-muted-foreground hover:text-destructive"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                {t("clear")}
-              </Button>
-              <Separator orientation="vertical" className="h-5" />
-              <Button
-                size="sm"
-                onClick={isProcessing ? undefined : handleCombine}
-                disabled={isProcessing}
-                className="gap-1.5"
-              >
-                {isProcessing ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    {processProgress || t("processing")}
-                  </>
-                ) : (
-                  <>
-                    <Download className="h-3.5 w-3.5" />
-                    {images.length > 1 ? t("combineAndSave") : t("save")}
-                    <kbd className="rounded bg-primary-foreground/20 px-1 font-mono text-[10px]">
-                      ⌘S
-                    </kbd>
-                  </>
-                )}
-              </Button>
-              <div
-                className={`overflow-hidden transition-all duration-200 ${
-                  isProcessing ? "max-w-24 opacity-100" : "max-w-0 opacity-0"
-                }`}
-              >
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={cancelCombine}
-                  className="gap-1 text-muted-foreground hover:text-destructive"
-                >
-                  <XCircle className="h-3.5 w-3.5" />
-                  {t("cancel")}
-                </Button>
-              </div>
-            </>
-          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setImages([])}
+            disabled={!hasImages}
+            className="gap-1.5 text-muted-foreground hover:text-destructive"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {t("clear")}
+          </Button>
+          <Separator orientation="vertical" className="h-5" />
+          <Button
+            size="sm"
+            onClick={isProcessing ? undefined : handleCombine}
+            disabled={!hasImages || isProcessing}
+            className="gap-1.5"
+          >
+            {isProcessing ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                {processProgress || t("processing")}
+              </>
+            ) : (
+              <>
+                <Download className="h-3.5 w-3.5" />
+                {images.length > 1 ? t("combineAndSave") : t("save")}
+                <kbd className="rounded bg-primary-foreground/20 px-1 font-mono text-[10px]">
+                  ⌘S
+                </kbd>
+              </>
+            )}
+          </Button>
+          <div
+            className={`overflow-hidden transition-all duration-200 ${
+              isProcessing ? "max-w-24 opacity-100" : "max-w-0 opacity-0"
+            }`}
+          >
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={cancelCombine}
+              className="gap-1 text-muted-foreground hover:text-destructive"
+            >
+              <XCircle className="h-3.5 w-3.5" />
+              {t("cancel")}
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -419,126 +421,122 @@ function App() {
         </div>
 
         {/* Settings sidebar */}
-        {hasImages && (
-          <>
-            <Separator orientation="vertical" />
-            <aside className="flex w-64 shrink-0 flex-col gap-5 overflow-y-auto p-4">
-              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                <Settings2 className="h-4 w-4" />
-                {t("outputSettings")}
-              </div>
+        <Separator orientation="vertical" />
+        <aside className="flex w-64 shrink-0 flex-col overflow-y-auto p-4">
+          <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <Settings2 className="h-4 w-4" />
+            {t("outputSettings")}
+          </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="height" className="text-xs">
-                  {t("outputHeight")}
-                </Label>
-                <Input
-                  id="height"
-                  type="number"
-                  value={outputHeight === 0 ? "" : outputHeight}
-                  onChange={(e) => setOutputHeight(Number(e.target.value))}
-                  placeholder={outputHeight === 0 ? String(maxImageHeight) : ""}
-                  min={100}
-                  max={10000}
-                />
-                <p className="py-1 text-[11px] text-muted-foreground">
-                  {t("outputSize", {
-                    width: estimatedWidth,
-                    height: effectiveHeight,
-                  })}
-                </p>
-                <div className="flex flex-wrap gap-1.5">
+          <div className="mt-5 space-y-2">
+            <Label htmlFor="height" className="text-xs">
+              {t("outputHeight")}
+            </Label>
+            <Input
+              id="height"
+              type="number"
+              value={outputHeight === 0 ? "" : outputHeight}
+              onChange={(e) => setOutputHeight(Number(e.target.value))}
+              placeholder={outputHeight === 0 ? String(maxImageHeight) : ""}
+              min={100}
+              max={10000}
+            />
+            <Collapse open={hasImages}>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {t("outputSize", {
+                  width: lastSizeRef.current.width,
+                  height: lastSizeRef.current.height,
+                })}
+              </p>
+            </Collapse>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              <button
+                onClick={() => setOutputHeight(0)}
+                className={`rounded-md px-2 py-0.5 text-[11px] transition-colors ${
+                  outputHeight === 0
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                }`}
+              >
+                {t("originalMax")}
+              </button>
+              {[400, 600, 800, 1080, 1440, 2160].map((h) => (
+                <button
+                  key={h}
+                  onClick={() => setOutputHeight(h)}
+                  className={`rounded-md px-2 py-0.5 text-[11px] transition-colors ${
+                    outputHeight === h
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground hover:bg-muted/80"
+                  }`}
+                >
+                  {h}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-5 space-y-2">
+            <Label htmlFor="format" className="text-xs">
+              {t("outputFormat")}
+            </Label>
+            <Select
+              value={format}
+              onValueChange={(v) => setFormat(v as "jpeg" | "png")}
+            >
+              <SelectTrigger id="format">
+                <SelectValue>{format.toUpperCase()}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="jpeg">JPEG</SelectItem>
+                <SelectItem value="png">PNG</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <Collapse open={format === "png"}>
+            <div className="mt-3 space-y-2">
+              <Label className="text-xs">{t("pngCompression")}</Label>
+              <div className="flex gap-1.5">
+                {([false, true] as const).map((lossy) => (
                   <button
-                    onClick={() => setOutputHeight(0)}
-                    className={`rounded-md px-2 py-0.5 text-[11px] transition-colors ${
-                      outputHeight === 0
+                    key={String(lossy)}
+                    onClick={() => setPngLossy(lossy)}
+                    className={`flex-1 rounded-md px-2 py-1 text-[11px] transition-colors ${
+                      pngLossy === lossy
                         ? "bg-primary text-primary-foreground"
                         : "bg-muted text-muted-foreground hover:bg-muted/80"
                     }`}
                   >
-                    {t("originalMax")}
+                    {lossy ? t("lossy") : t("lossless")}
                   </button>
-                  {[400, 600, 800, 1080, 1440, 2160].map((h) => (
-                    <button
-                      key={h}
-                      onClick={() => setOutputHeight(h)}
-                      className={`rounded-md px-2 py-0.5 text-[11px] transition-colors ${
-                        outputHeight === h
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted text-muted-foreground hover:bg-muted/80"
-                      }`}
-                    >
-                      {h}
-                    </button>
-                  ))}
-                </div>
+                ))}
               </div>
+            </div>
+          </Collapse>
 
-              <div className="space-y-2">
-                <Label htmlFor="format" className="text-xs">
-                  {t("outputFormat")}
-                </Label>
-                <Select
-                  value={format}
-                  onValueChange={(v) => setFormat(v as "jpeg" | "png")}
-                >
-                  <SelectTrigger id="format">
-                    <SelectValue>{format.toUpperCase()}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="jpeg">JPEG</SelectItem>
-                    <SelectItem value="png">PNG</SelectItem>
-                  </SelectContent>
-                </Select>
+          <Collapse open={format === "jpeg" || (format === "png" && pngLossy)}>
+            <div className="mt-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">{t("quality")}</Label>
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {quality}%
+                </span>
               </div>
-
-              {format === "png" && (
-                <div className="space-y-2">
-                  <Label className="text-xs">{t("pngCompression")}</Label>
-                  <div className="flex gap-1.5">
-                    {([false, true] as const).map((lossy) => (
-                      <button
-                        key={String(lossy)}
-                        onClick={() => setPngLossy(lossy)}
-                        className={`flex-1 rounded-md px-2 py-1 text-[11px] transition-colors ${
-                          pngLossy === lossy
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-muted text-muted-foreground hover:bg-muted/80"
-                        }`}
-                      >
-                        {lossy ? t("lossy") : t("lossless")}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {(format === "jpeg" || (format === "png" && pngLossy)) && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs">{t("quality")}</Label>
-                    <span className="text-xs tabular-nums text-muted-foreground">
-                      {quality}%
-                    </span>
-                  </div>
-                  <Slider
-                    value={[quality]}
-                    onValueChange={(v) =>
-                      setQuality(Array.isArray(v) ? v[0] : v)
-                    }
-                    min={1}
-                    max={100}
-                    step={1}
-                  />
-                  <div className="flex justify-between text-[10px] text-muted-foreground">
-                    <span>{t("smallFile")}</span>
-                    <span>{t("highQuality")}</span>
-                  </div>
-                </div>
-              )}
-            </aside>
-          </>
-        )}
+              <Slider
+                value={[quality]}
+                onValueChange={(v) => setQuality(Array.isArray(v) ? v[0] : v)}
+                min={1}
+                max={100}
+                step={1}
+              />
+              <div className="flex justify-between text-[10px] text-muted-foreground">
+                <span>{t("smallFile")}</span>
+                <span>{t("highQuality")}</span>
+              </div>
+            </div>
+          </Collapse>
+        </aside>
       </div>
 
       {/* Image preview dialog */}
