@@ -174,7 +174,7 @@ async fn get_image_info(path: String) -> Result<ImageInfo, String> {
         let img = load_and_decode(&path)?;
         let (width, height) = img.dimensions();
 
-        let thumbnail = img.thumbnail(999999, 200);
+        let thumbnail = img.thumbnail(999999, 384);
         let thumbnail_data = encode_to_jpeg_base64(&thumbnail, 80)?;
 
         Ok(ImageInfo {

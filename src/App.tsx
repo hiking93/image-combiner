@@ -69,6 +69,7 @@ function App() {
   const [selectedPreviewSrc, setSelectedPreviewSrc] = useState<string | null>(
     null,
   );
+  const [selectedPreviewLoading, setSelectedPreviewLoading] = useState(false);
   const loadCancelRef = useRef(0);
   const combineCancelRef = useRef(false);
 
@@ -148,6 +149,7 @@ function App() {
   const handleSelectImage = useCallback(async (image: ImageItem) => {
     setSelectedImage(image);
     setSelectedPreviewSrc(image.thumbnail);
+    setSelectedPreviewLoading(true);
     try {
       const src = await invoke<string>("get_image_preview", {
         path: image.path,
@@ -155,6 +157,8 @@ function App() {
       setSelectedPreviewSrc(src);
     } catch {
       // keep thumbnail as fallback
+    } finally {
+      setSelectedPreviewLoading(false);
     }
   }, []);
 
@@ -399,7 +403,7 @@ function App() {
                     items={images}
                     strategy={horizontalListSortingStrategy}
                   >
-                    <div className="flex h-full w-max min-w-full items-center gap-3 p-3">
+                    <div className="flex h-full w-max min-w-full items-center justify-center gap-3 p-3">
                       {images.map((img, index) => (
                         <SortableImage
                           key={img.id}
@@ -558,6 +562,7 @@ function App() {
           if (!open) {
             setSelectedImage(null);
             setSelectedPreviewSrc(null);
+            setSelectedPreviewLoading(false);
           }
         }}
       >
@@ -565,7 +570,7 @@ function App() {
           <DialogHeader>
             <DialogTitle>{selectedImage?.fileName}</DialogTitle>
           </DialogHeader>
-          <div className="flex h-[70vh] items-center justify-center rounded-lg bg-muted/50">
+          <div className="relative flex h-[70vh] items-center justify-center rounded-lg bg-muted/50">
             {selectedPreviewSrc ? (
               <ZoomableImage
                 src={selectedPreviewSrc}
@@ -573,7 +578,12 @@ function App() {
                 className="h-full w-full rounded-lg"
               />
             ) : (
-              <p className="py-12 text-sm text-muted-foreground">載入中...</p>
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            )}
+            {selectedPreviewLoading && selectedPreviewSrc && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
             )}
           </div>
           {selectedImage && (

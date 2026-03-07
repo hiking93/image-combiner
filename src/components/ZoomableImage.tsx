@@ -143,7 +143,7 @@ export function ZoomableImage({ src, alt, className }: ZoomableImageProps) {
         ref={imgRef}
         src={src}
         alt={alt}
-        className="max-h-full max-w-full object-contain"
+        className="h-full w-full object-contain"
         style={{
           transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
         }}

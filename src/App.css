@@ -85,16 +85,18 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-@keyframes scale-in {
+@keyframes item-enter-layout {
   from {
-    transform: scale(0.5);
-    opacity: 0;
+    max-width: 0;
+  }
+  to {
+    max-width: var(--item-width);
   }
 }
 
-@keyframes scale-out {
-  to {
-    transform: scale(0.5);
+@keyframes item-enter-visual {
+  from {
+    transform: scale(0);
     opacity: 0;
   }
 }
