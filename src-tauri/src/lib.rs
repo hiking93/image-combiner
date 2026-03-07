@@ -231,28 +231,6 @@ async fn combine_images(
 }
 
 #[tauri::command]
-async fn preview_combined(
-    image_paths: Vec<String>,
-    output_height: u32,
-) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || {
-        let images: Vec<DynamicImage> = image_paths
-            .par_iter()
-            .map(|p| load_and_decode(p))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let combined = resize_and_combine(&images, output_height);
-
-        let preview_height = 300u32.min(output_height);
-        let preview = combined.thumbnail(u32::MAX, preview_height);
-
-        encode_to_jpeg_base64(&preview, 85)
-    })
-    .await
-    .map_err(|e| format!("Task failed: {}", e))?
-}
-
-#[tauri::command]
 async fn save_combined_image(
     app: tauri::AppHandle,
     data: Vec<u8>,
@@ -305,7 +283,6 @@ pub fn run() {
             get_image_info,
             get_image_preview,
             combine_images,
-            preview_combined,
             save_combined_image,
         ])
         .run(tauri::generate_context!())

@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { open } from "@tauri-apps/plugin-dialog";
+import { useTranslation } from "react-i18next";
 import {
   DndContext,
   closestCenter,
@@ -19,7 +20,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { SortableImage, type ImageItem } from "./components/SortableImage";
-import { PreviewDialog } from "./components/PreviewDialog";
+import { SettingsDialog } from "./components/SettingsDialog";
 import {
   Dialog,
   DialogContent,
@@ -42,7 +43,6 @@ import {
 } from "./components/ui/select";
 import {
   Download,
-  Eye,
   Trash2,
   Images,
   Settings2,
@@ -54,6 +54,7 @@ import {
 import { Toaster, toast } from "sonner";
 
 function App() {
+  const { t } = useTranslation();
   const [images, setImages] = useState<ImageItem[]>([]);
   const [outputHeight, setOutputHeight] = useState(0);
   const [quality, setQuality] = useState(85);
@@ -62,15 +63,13 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [processProgress, setProcessProgress] = useState("");
   const [loadingCount, setLoadingCount] = useState(0);
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null);
   const [selectedPreviewSrc, setSelectedPreviewSrc] = useState<string | null>(
     null,
   );
   const [selectedPreviewLoading, setSelectedPreviewLoading] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const loadCancelRef = useRef(0);
   const combineCancelRef = useRef(false);
 
@@ -78,46 +77,49 @@ function App() {
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
 
-  const addImages = useCallback(async (paths: string[]) => {
-    const batchId = ++loadCancelRef.current;
-    setLoadingCount((c) => c + paths.length);
-    await Promise.allSettled(
-      paths.map(async (path) => {
-        try {
-          const info = await invoke<{
-            width: number;
-            height: number;
-            file_size: number;
-            file_name: string;
-            thumbnail: string;
-          }>("get_image_info", { path });
-          if (loadCancelRef.current !== batchId) return;
-          setImages((prev) => [
-            ...prev,
-            {
-              id: crypto.randomUUID(),
-              path,
-              thumbnail: info.thumbnail,
-              fileName: info.file_name,
-              width: info.width,
-              height: info.height,
-              fileSize: info.file_size,
-            },
-          ]);
-        } catch (e) {
-          if (loadCancelRef.current !== batchId) return;
-          const fileName = path.split("/").pop() || path;
-          toast.error(`無法載入 ${fileName}`, {
-            description: String(e),
-          });
-        } finally {
-          if (loadCancelRef.current === batchId) {
-            setLoadingCount((c) => c - 1);
+  const addImages = useCallback(
+    async (paths: string[]) => {
+      const batchId = ++loadCancelRef.current;
+      setLoadingCount((c) => c + paths.length);
+      await Promise.allSettled(
+        paths.map(async (path) => {
+          try {
+            const info = await invoke<{
+              width: number;
+              height: number;
+              file_size: number;
+              file_name: string;
+              thumbnail: string;
+            }>("get_image_info", { path });
+            if (loadCancelRef.current !== batchId) return;
+            setImages((prev) => [
+              ...prev,
+              {
+                id: crypto.randomUUID(),
+                path,
+                thumbnail: info.thumbnail,
+                fileName: info.file_name,
+                width: info.width,
+                height: info.height,
+                fileSize: info.file_size,
+              },
+            ]);
+          } catch (e) {
+            if (loadCancelRef.current !== batchId) return;
+            const fileName = path.split("/").pop() || path;
+            toast.error(t("loadFailed", { fileName }), {
+              description: String(e),
+            });
+          } finally {
+            if (loadCancelRef.current === batchId) {
+              setLoadingCount((c) => c - 1);
+            }
           }
-        }
-      }),
-    );
-  }, []);
+        }),
+      );
+    },
+    [t],
+  );
 
   const cancelLoading = useCallback(() => {
     loadCancelRef.current++;
@@ -179,36 +181,11 @@ function App() {
     }
   }, []);
 
-  const handlePreview = async () => {
-    if (images.length === 0) return;
-    setPreviewOpen(true);
-    setPreviewLoading(true);
-    setPreviewSrc(null);
-    try {
-      const src = await invoke<string>("preview_combined", {
-        imagePaths: images.map((img) => img.path),
-        outputHeight: effectiveHeight,
-      });
-      setPreviewSrc(src);
-    } catch (e) {
-      console.error("Preview failed:", e);
-    } finally {
-      setPreviewLoading(false);
-    }
-  };
-
   const handleCombine = async () => {
     if (images.length === 0) return;
     combineCancelRef.current = false;
     setIsProcessing(true);
-    setProcessProgress("準備中…");
-
-    const stepLabels: Record<string, string> = {
-      loading: "讀取圖片",
-      resizing: "縮放圖片",
-      combining: "合併圖片",
-      encoding: "編碼輸出",
-    };
+    setProcessProgress(t("preparing"));
 
     const unlisten = await listen<{
       step: string;
@@ -216,7 +193,7 @@ function App() {
       total: number;
     }>("combine-progress", (event) => {
       const { step, current, total } = event.payload;
-      const label = stepLabels[step] || step;
+      const label = t(`step.${step}`, { defaultValue: step });
       setProcessProgress(`${label} (${current}/${total})`);
     });
 
@@ -229,7 +206,7 @@ function App() {
         pngLossy,
       });
       if (combineCancelRef.current) return;
-      setProcessProgress("儲存中…");
+      setProcessProgress(t("saving"));
       await invoke("save_combined_image", { data, format });
     } catch (e) {
       const msg = String(e);
@@ -276,10 +253,6 @@ function App() {
         e.preventDefault();
         handleCombine();
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === "p") {
-        e.preventDefault();
-        handlePreview();
-      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -306,10 +279,17 @@ function App() {
           <Layers className="h-5 w-5 text-primary" />
           <h1 className="text-sm font-semibold">Image Combiner</h1>
         </div>
+        <button
+          onClick={() => setSettingsOpen(true)}
+          className="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
+          title={t("settings")}
+        >
+          <Settings2 className="h-4 w-4" />
+        </button>
         {hasImages && (
           <Badge variant="secondary" className="gap-1">
             <Images className="h-3 w-3" />
-            {images.length} 張圖片
+            {t("imageCount", { count: images.length })}
           </Badge>
         )}
         <div
@@ -321,12 +301,12 @@ function App() {
         >
           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
           <span className="whitespace-nowrap">
-            正在載入 {loadingCount} 張圖片…
+            {t("loadingImages", { count: loadingCount })}
           </span>
           <button
             onClick={cancelLoading}
             className="shrink-0 rounded-full text-muted-foreground transition-colors hover:text-destructive"
-            title="取消載入"
+            title={t("cancelLoad")}
           >
             <XCircle className="h-3.5 w-3.5" />
           </button>
@@ -341,21 +321,9 @@ function App() {
                 className="gap-1.5 text-muted-foreground hover:text-destructive"
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                清除
+                {t("clear")}
               </Button>
               <Separator orientation="vertical" className="h-5" />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handlePreview}
-                className="gap-1.5"
-              >
-                <Eye className="h-3.5 w-3.5" />
-                預覽
-                <kbd className="rounded bg-muted px-1 font-mono text-[10px] text-muted-foreground">
-                  ⌘P
-                </kbd>
-              </Button>
               <Button
                 size="sm"
                 onClick={isProcessing ? undefined : handleCombine}
@@ -365,12 +333,12 @@ function App() {
                 {isProcessing ? (
                   <>
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    {processProgress || "處理中…"}
+                    {processProgress || t("processing")}
                   </>
                 ) : (
                   <>
                     <Download className="h-3.5 w-3.5" />
-                    合併並儲存
+                    {images.length > 1 ? t("combineAndSave") : t("save")}
                     <kbd className="rounded bg-primary-foreground/20 px-1 font-mono text-[10px]">
                       ⌘S
                     </kbd>
@@ -389,7 +357,7 @@ function App() {
                   className="gap-1 text-muted-foreground hover:text-destructive"
                 >
                   <XCircle className="h-3.5 w-3.5" />
-                  取消
+                  {t("cancel")}
                 </Button>
               </div>
             </>
@@ -457,12 +425,12 @@ function App() {
             <aside className="flex w-64 shrink-0 flex-col gap-5 overflow-y-auto p-4">
               <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                 <Settings2 className="h-4 w-4" />
-                輸出設定
+                {t("outputSettings")}
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="height" className="text-xs">
-                  輸出高度 (px)
+                  {t("outputHeight")}
                 </Label>
                 <Input
                   id="height"
@@ -474,7 +442,10 @@ function App() {
                   max={10000}
                 />
                 <p className="py-1 text-[11px] text-muted-foreground">
-                  輸出尺寸：{estimatedWidth} × {effectiveHeight}
+                  {t("outputSize", {
+                    width: estimatedWidth,
+                    height: effectiveHeight,
+                  })}
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   <button
@@ -485,7 +456,7 @@ function App() {
                         : "bg-muted text-muted-foreground hover:bg-muted/80"
                     }`}
                   >
-                    原始最高
+                    {t("originalMax")}
                   </button>
                   {[400, 600, 800, 1080, 1440, 2160].map((h) => (
                     <button
@@ -505,7 +476,7 @@ function App() {
 
               <div className="space-y-2">
                 <Label htmlFor="format" className="text-xs">
-                  輸出格式
+                  {t("outputFormat")}
                 </Label>
                 <Select
                   value={format}
@@ -523,7 +494,7 @@ function App() {
 
               {format === "png" && (
                 <div className="space-y-2">
-                  <Label className="text-xs">PNG 壓縮模式</Label>
+                  <Label className="text-xs">{t("pngCompression")}</Label>
                   <div className="flex gap-1.5">
                     {([false, true] as const).map((lossy) => (
                       <button
@@ -535,7 +506,7 @@ function App() {
                             : "bg-muted text-muted-foreground hover:bg-muted/80"
                         }`}
                       >
-                        {lossy ? "有損 (量化)" : "無損"}
+                        {lossy ? t("lossy") : t("lossless")}
                       </button>
                     ))}
                   </div>
@@ -545,7 +516,7 @@ function App() {
               {(format === "jpeg" || (format === "png" && pngLossy)) && (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <Label className="text-xs">壓縮品質</Label>
+                    <Label className="text-xs">{t("quality")}</Label>
                     <span className="text-xs tabular-nums text-muted-foreground">
                       {quality}%
                     </span>
@@ -560,8 +531,8 @@ function App() {
                     step={1}
                   />
                   <div className="flex justify-between text-[10px] text-muted-foreground">
-                    <span>小檔案</span>
-                    <span>高品質</span>
+                    <span>{t("smallFile")}</span>
+                    <span>{t("highQuality")}</span>
                   </div>
                 </div>
               )}
@@ -612,13 +583,7 @@ function App() {
         </DialogContent>
       </Dialog>
 
-      {/* Combined preview dialog */}
-      <PreviewDialog
-        open={previewOpen}
-        onOpenChange={setPreviewOpen}
-        previewSrc={previewSrc}
-        isLoading={previewLoading}
-      />
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       <Toaster richColors position="bottom-right" />
     </main>
   );

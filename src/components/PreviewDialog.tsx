@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import {
   Dialog,
   DialogContent,
@@ -18,17 +19,19 @@ export function PreviewDialog({
   previewSrc,
   isLoading,
 }: PreviewDialogProps) {
+  const { t } = useTranslation();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl">
         <DialogHeader>
-          <DialogTitle>合併預覽</DialogTitle>
+          <DialogTitle>{t("previewTitle")}</DialogTitle>
         </DialogHeader>
         <div className="flex items-center justify-center overflow-auto rounded-lg bg-muted/50 p-4">
           {isLoading ? (
             <div className="flex items-center gap-2 py-12 text-sm text-muted-foreground">
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-              正在產生預覽...
+              {t("generatingPreview")}
             </div>
           ) : previewSrc ? (
             <img
@@ -37,7 +40,9 @@ export function PreviewDialog({
               className="max-h-[60vh] w-auto rounded"
             />
           ) : (
-            <p className="py-12 text-sm text-muted-foreground">無法產生預覽</p>
+            <p className="py-12 text-sm text-muted-foreground">
+              {t("previewFailed")}
+            </p>
           )}
         </div>
       </DialogContent>
