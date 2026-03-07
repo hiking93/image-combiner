@@ -124,7 +124,7 @@ function App() {
   const saveButtonRef = useRef<HTMLButtonElement>(null);
 
   const loadCancelRef = useRef(0);
-  const combineCancelRef = useRef(false);
+  const combineIdRef = useRef(0);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -334,7 +334,7 @@ function App() {
 
   const handleCombine = async () => {
     if (images.length === 0) return;
-    combineCancelRef.current = false;
+    const currentId = ++combineIdRef.current;
     setIsProcessing(true);
     setProcessProgress(t("preparing"));
 
@@ -343,9 +343,10 @@ function App() {
       current: number;
       total: number;
     }>("combine-progress", (event) => {
+      if (combineIdRef.current !== currentId) return;
       const { step, current, total } = event.payload;
       const label = t(`step.${step}`, { defaultValue: step });
-      setProcessProgress(`${label} (${current}/${total})`);
+      setProcessProgress(total > 1 ? `${label} (${current}/${total})` : label);
     });
 
     try {
@@ -359,25 +360,28 @@ function App() {
         maxColors,
         direction,
       });
-      if (combineCancelRef.current) return;
+      if (combineIdRef.current !== currentId) return;
       setProcessProgress(t("saving"));
       await invoke("save_combined_image", { data, format });
     } catch (e) {
       const msg = String(e);
-      if (!msg.includes("cancelled") && !combineCancelRef.current) {
+      if (!msg.includes("cancelled") && combineIdRef.current === currentId) {
         console.error(e);
       }
     } finally {
       unlisten();
-      setIsProcessing(false);
-      setProcessProgress("");
+      if (combineIdRef.current === currentId) {
+        setIsProcessing(false);
+        setProcessProgress("");
+      }
     }
   };
 
   const cancelCombine = useCallback(() => {
-    combineCancelRef.current = true;
+    combineIdRef.current++;
     setIsProcessing(false);
     setProcessProgress("");
+    invoke("cancel_combine");
   }, []);
 
   // Re-fetch thumbnails when direction changes
@@ -409,18 +413,27 @@ function App() {
   }, [direction]);
 
   // Animate save button width changes
-  const saveButtonWidthRef = useRef<number>(0);
+  const saveButtonAnimRef = useRef<{ anim: Animation | null; width: number }>({
+    anim: null,
+    width: 0,
+  });
   useLayoutEffect(() => {
     const btn = saveButtonRef.current;
     if (!btn) return;
-    const oldWidth = saveButtonWidthRef.current;
+    const prev = saveButtonAnimRef.current;
+    // Get current visual width (mid-animation or settled)
+    const currentWidth =
+      prev.anim?.playState === "running"
+        ? parseFloat(getComputedStyle(btn).width)
+        : prev.width;
     const newWidth = btn.offsetWidth;
-    saveButtonWidthRef.current = newWidth;
-    if (oldWidth > 0 && oldWidth !== newWidth) {
-      btn.animate([{ width: `${oldWidth}px` }, { width: `${newWidth}px` }], {
-        duration: 200,
-        easing: "ease-out",
-      });
+    prev.width = newWidth;
+    if (currentWidth > 0 && currentWidth !== newWidth) {
+      prev.anim?.cancel();
+      prev.anim = btn.animate(
+        [{ width: `${currentWidth}px` }, { width: `${newWidth}px` }],
+        { duration: 200, easing: "ease-out" },
+      );
     }
   });
 

@@ -1,12 +1,32 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 use image::{DynamicImage, GenericImageView, ImageReader};
-use rayon::prelude::*;
 use serde::Serialize;
 use std::io::Cursor;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tauri::Emitter;
 use tauri_plugin_dialog::DialogExt;
+
+struct AppState {
+    generation: CombineGeneration,
+    pool: rayon::ThreadPool,
+}
+
+struct CombineGeneration(AtomicU64);
+
+impl CombineGeneration {
+    fn current(&self) -> u64 {
+        self.0.load(Ordering::Relaxed)
+    }
+
+    fn next(&self) -> u64 {
+        self.0.fetch_add(1, Ordering::Relaxed) + 1
+    }
+
+    fn cancel(&self) {
+        self.0.fetch_add(1, Ordering::Relaxed);
+    }
+}
 
 #[derive(Serialize, Clone)]
 struct CombineProgress {
@@ -40,7 +60,7 @@ fn resize_and_combine(
     let vertical = direction == "vertical";
 
     let scaled: Vec<DynamicImage> = images
-        .par_iter()
+        .iter()
         .map(|img| {
             let (w, h) = img.dimensions();
             if vertical {
@@ -252,6 +272,7 @@ async fn get_image_info(path: String) -> Result<ImageInfo, String> {
 #[tauri::command]
 async fn combine_images(
     app: tauri::AppHandle,
+    state: tauri::State<'_, Arc<AppState>>,
     image_paths: Vec<String>,
     output_height: u32,
     quality: u32,
@@ -261,36 +282,123 @@ async fn combine_images(
     max_colors: u32,
     direction: String,
 ) -> Result<Vec<u8>, String> {
-    tokio::task::spawn_blocking(move || {
-        let total = image_paths.len();
+    let state = state.inner().clone();
+    let my_gen = state.generation.next();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let task_state = state.clone();
+    state.pool.spawn(move || {
+        let cancelled = || -> Result<(), String> {
+            if task_state.generation.current() != my_gen {
+                Err("cancelled".to_string())
+            } else {
+                Ok(())
+            }
+        };
+        let result = (|| {
+            let total = image_paths.len();
 
-        // Step 1: Load images in parallel
-        emit_progress(&app, "loading", 0, total);
-        let counter = Arc::new(AtomicUsize::new(0));
-        let images: Vec<DynamicImage> = image_paths
-            .par_iter()
-            .map(|p| {
-                let result = load_and_decode(p);
-                let done = counter.fetch_add(1, Ordering::Relaxed) + 1;
-                emit_progress(&app, "loading", done, total);
-                result
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+            // Step 1: Load images
+            emit_progress(&app, "loading", 0, total);
+            let counter = Arc::new(AtomicUsize::new(0));
+            let images: Vec<DynamicImage> = image_paths
+                .iter()
+                .map(|p| {
+                    cancelled()?;
+                    let result = load_and_decode(p);
+                    let done = counter.fetch_add(1, Ordering::Relaxed) + 1;
+                    emit_progress(&app, "loading", done, total);
+                    result
+                })
+                .collect::<Result<Vec<_>, _>>()?;
 
-        // Step 2: Resize and combine
-        emit_progress(&app, "resizing", 0, total);
-        let combined = resize_and_combine(&images, output_height, &direction);
-        emit_progress(&app, "combining", 1, 1);
+            cancelled()?;
 
-        // Step 3: Encode
-        emit_progress(&app, "encoding", 0, 1);
-        let result = encode_output(&combined, &format, quality, png_lossy, dithering, max_colors)?;
-        emit_progress(&app, "encoding", 1, 1);
+            // Step 2: Resize and combine
+            emit_progress(&app, "resizing", 0, total);
+            let combined = resize_and_combine(&images, output_height, &direction);
+            emit_progress(&app, "combining", 1, 1);
 
-        Ok(result)
-    })
-    .await
-    .map_err(|e| format!("Task failed: {}", e))?
+            cancelled()?;
+
+            // Step 3: Encode via subprocess (killable)
+            emit_progress(&app, "encoding", 0, 1);
+
+            let temp_dir = std::env::temp_dir().join("image-combiner-encode");
+            std::fs::create_dir_all(&temp_dir)
+                .map_err(|e| format!("Failed to create temp dir: {}", e))?;
+            let input_path = temp_dir.join(format!("input_{}.bmp", my_gen));
+            let output_path = temp_dir.join(format!("output_{}", my_gen));
+
+            // Save combined image as BMP (fast, lossless)
+            combined
+                .save(&input_path)
+                .map_err(|e| format!("Failed to save temp image: {}", e))?;
+
+            cancelled()?;
+
+            // Spawn encoder subprocess
+            let exe = std::env::current_exe()
+                .map_err(|e| format!("Failed to get exe path: {}", e))?;
+            let child = std::process::Command::new(exe)
+                .args([
+                    "--encode",
+                    &format,
+                    &quality.to_string(),
+                    &png_lossy.to_string(),
+                    &dithering.to_string(),
+                    &max_colors.to_string(),
+                    &input_path.to_string_lossy(),
+                    &output_path.to_string_lossy(),
+                ])
+                .spawn()
+                .map_err(|e| format!("Failed to spawn encoder: {}", e))?;
+
+            // Poll subprocess, checking for cancellation
+            let mut child = child;
+            let status = loop {
+                match child.try_wait() {
+                    Ok(Some(status)) => break status,
+                    Ok(None) => {
+                        if let Err(e) = cancelled() {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            let _ = std::fs::remove_file(&input_path);
+                            let _ = std::fs::remove_file(&output_path);
+                            return Err(e);
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                    }
+                    Err(e) => return Err(format!("Encoder process failed: {}", e)),
+                }
+            };
+
+            // Clean up temp input
+            let _ = std::fs::remove_file(&input_path);
+
+            if !status.success() {
+                let _ = std::fs::remove_file(&output_path);
+                cancelled()?;
+                return Err("Encoding failed".to_string());
+            }
+
+            // Read encoded output
+            let result = std::fs::read(&output_path)
+                .map_err(|e| format!("Failed to read encoded output: {}", e))?;
+            let _ = std::fs::remove_file(&output_path);
+
+            emit_progress(&app, "encoding", 1, 1);
+
+            Ok(result)
+        })();
+        let _ = tx.send(result);
+    });
+    rx.await.map_err(|_| "Task failed".to_string())?
+}
+
+#[tauri::command]
+async fn cancel_combine(state: tauri::State<'_, Arc<AppState>>) -> Result<(), String> {
+    state.generation.cancel();
+    Ok(())
 }
 
 #[tauri::command]
@@ -379,10 +487,49 @@ async fn save_pasted_image(data: Vec<u8>, mime_type: String) -> Result<String, S
     .map_err(|e| format!("Task failed: {}", e))?
 }
 
+/// Subprocess entry point for encoding. Returns true if handled.
+pub fn try_encode_subprocess() -> bool {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() < 4 || args[1] != "--encode" {
+        return false;
+    }
+    // Args: --encode <format> <quality> <png_lossy> <dithering> <max_colors> <input> <output>
+    if args.len() < 9 {
+        eprintln!("Usage: --encode <format> <quality> <png_lossy> <dithering> <max_colors> <input> <output>");
+        std::process::exit(1);
+    }
+    let format = &args[2];
+    let quality: u32 = args[3].parse().unwrap_or(85);
+    let png_lossy: bool = args[4].parse().unwrap_or(false);
+    let dithering: f32 = args[5].parse().unwrap_or(1.0);
+    let max_colors: u32 = args[6].parse().unwrap_or(256);
+    let input_path = &args[7];
+    let output_path = &args[8];
+
+    let img = load_and_decode(input_path).unwrap_or_else(|e| {
+        eprintln!("Failed to load input: {}", e);
+        std::process::exit(1);
+    });
+    let result = encode_output(&img, format, quality, png_lossy, dithering, max_colors)
+        .unwrap_or_else(|e| {
+            eprintln!("Failed to encode: {}", e);
+            std::process::exit(1);
+        });
+    std::fs::write(output_path, &result).unwrap_or_else(|e| {
+        eprintln!("Failed to write output: {}", e);
+        std::process::exit(1);
+    });
+    true
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .manage(Arc::new(AppState {
+            generation: CombineGeneration(AtomicU64::new(0)),
+            pool: rayon::ThreadPoolBuilder::new().build().unwrap(),
+        }))
         .setup(|app| {
             use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 
@@ -434,6 +581,7 @@ pub fn run() {
             get_thumbnail,
             get_image_preview,
             combine_images,
+            cancel_combine,
             save_combined_image,
             save_pasted_image,
         ])
