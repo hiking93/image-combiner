@@ -48,6 +48,7 @@ import {
   Settings2,
   Layers,
   Loader2,
+  XCircle,
 } from "lucide-react";
 import { Toaster, toast } from "sonner";
 
@@ -67,12 +68,15 @@ function App() {
   const [selectedPreviewSrc, setSelectedPreviewSrc] = useState<string | null>(
     null,
   );
+  const loadCancelRef = useRef(0);
+  const combineCancelRef = useRef(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
 
   const addImages = useCallback(async (paths: string[]) => {
+    const batchId = ++loadCancelRef.current;
     setLoadingCount((c) => c + paths.length);
     await Promise.allSettled(
       paths.map(async (path) => {
@@ -84,6 +88,7 @@ function App() {
             file_name: string;
             thumbnail: string;
           }>("get_image_info", { path });
+          if (loadCancelRef.current !== batchId) return;
           setImages((prev) => [
             ...prev,
             {
@@ -97,15 +102,23 @@ function App() {
             },
           ]);
         } catch (e) {
+          if (loadCancelRef.current !== batchId) return;
           const fileName = path.split("/").pop() || path;
           toast.error(`無法載入 ${fileName}`, {
             description: String(e),
           });
         } finally {
-          setLoadingCount((c) => c - 1);
+          if (loadCancelRef.current === batchId) {
+            setLoadingCount((c) => c - 1);
+          }
         }
       }),
     );
+  }, []);
+
+  const cancelLoading = useCallback(() => {
+    loadCancelRef.current++;
+    setLoadingCount(0);
   }, []);
 
   const removeImage = useCallback((id: string) => {
@@ -164,6 +177,7 @@ function App() {
 
   const handleCombine = async () => {
     if (images.length === 0) return;
+    combineCancelRef.current = false;
     setIsProcessing(true);
     setProcessProgress("準備中…");
 
@@ -191,11 +205,12 @@ function App() {
         quality,
         format,
       });
+      if (combineCancelRef.current) return;
       setProcessProgress("儲存中…");
       await invoke("save_combined_image", { data, format });
     } catch (e) {
       const msg = String(e);
-      if (!msg.includes("cancelled")) {
+      if (!msg.includes("cancelled") && !combineCancelRef.current) {
         console.error(e);
       }
     } finally {
@@ -204,6 +219,12 @@ function App() {
       setProcessProgress("");
     }
   };
+
+  const cancelCombine = useCallback(() => {
+    combineCancelRef.current = true;
+    setIsProcessing(false);
+    setProcessProgress("");
+  }, []);
 
   // Tauri file drag-and-drop
   const addImagesRef = useRef(addImages);
@@ -272,6 +293,13 @@ function App() {
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             正在載入 {loadingCount} 張圖片…
+            <button
+              onClick={cancelLoading}
+              className="rounded-full text-muted-foreground hover:text-destructive"
+              title="取消載入"
+            >
+              <XCircle className="h-3.5 w-3.5" />
+            </button>
           </div>
         )}
         <div className="ml-auto flex items-center gap-2">
@@ -299,27 +327,31 @@ function App() {
                   ⌘P
                 </kbd>
               </Button>
-              <Button
-                size="sm"
-                onClick={handleCombine}
-                disabled={isProcessing}
-                className="gap-1.5"
-              >
-                {isProcessing ? (
-                  <>
+              {isProcessing ? (
+                <>
+                  <Button size="sm" disabled className="gap-1.5">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     {processProgress || "處理中…"}
-                  </>
-                ) : (
-                  <>
-                    <Download className="h-3.5 w-3.5" />
-                    合併並儲存
-                    <kbd className="rounded bg-primary-foreground/20 px-1 font-mono text-[10px]">
-                      ⌘S
-                    </kbd>
-                  </>
-                )}
-              </Button>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={cancelCombine}
+                    className="gap-1 text-muted-foreground hover:text-destructive"
+                  >
+                    <XCircle className="h-3.5 w-3.5" />
+                    取消
+                  </Button>
+                </>
+              ) : (
+                <Button size="sm" onClick={handleCombine} className="gap-1.5">
+                  <Download className="h-3.5 w-3.5" />
+                  合併並儲存
+                  <kbd className="rounded bg-primary-foreground/20 px-1 font-mono text-[10px]">
+                    ⌘S
+                  </kbd>
+                </Button>
+              )}
             </>
           )}
         </div>
