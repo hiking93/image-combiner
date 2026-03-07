@@ -2,12 +2,12 @@ import { useRef, useState, useEffect } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/utils";
-import { X } from "lucide-react";
+import { X, Loader2 } from "lucide-react";
 
 export interface ImageItem {
   id: string;
   path: string;
-  thumbnail: string;
+  thumbnail: string | null;
   fileName: string;
   width: number;
   height: number;
@@ -19,6 +19,7 @@ interface SortableImageProps {
   index: number;
   onRemove: (id: string) => void;
   onSelect: (image: ImageItem) => void;
+  vertical?: boolean;
 }
 
 function formatFileSize(bytes: number): string {
@@ -32,6 +33,7 @@ export function SortableImage({
   index,
   onRemove,
   onSelect,
+  vertical,
 }: SortableImageProps) {
   const ref = useRef<HTMLDivElement>(null);
   const didDrag = useRef(false);
@@ -69,11 +71,13 @@ export function SortableImage({
     isDragging,
   } = useSortable({ id: image.id });
 
-  const displayWidth = Math.round((image.width / image.height) * 192);
+  const displayWidth = vertical
+    ? undefined
+    : Math.round((image.width / image.height) * 192);
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    "--item-width": `${displayWidth}px`,
+    ...(displayWidth ? { "--item-width": `${displayWidth}px` } : {}),
   } as React.CSSProperties;
 
   return (
@@ -82,6 +86,7 @@ export function SortableImage({
         setNodeRef(node);
         (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
       }}
+      data-flip-key={image.id}
       style={style}
       className={cn(
         "shrink-0",
@@ -104,25 +109,47 @@ export function SortableImage({
     >
       <div
         className={cn(
-          "group relative w-max origin-left cursor-grab overflow-hidden rounded-lg border bg-card shadow-sm",
+          "group relative cursor-grab overflow-hidden rounded-lg border bg-card shadow-sm",
+          vertical ? "w-48 origin-top" : "w-max origin-left",
           isNew && "animate-[item-enter-visual_250ms_ease-out]",
           !isDragging && "hover:shadow-md",
         )}
       >
         {/* Index badge */}
-        <div className="absolute left-1.5 top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-black/50 px-1 text-[10px] font-medium text-white">
+        <div className="absolute left-1.5 top-1.5 z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-black/50 px-1 text-[10px] font-medium text-white">
           {index}
         </div>
 
-        <img
-          src={image.thumbnail}
-          alt={image.fileName}
-          className="h-48 w-auto object-contain"
-          draggable={false}
-        />
+        <div
+          style={
+            vertical
+              ? {
+                  width: 192,
+                  height: Math.round((image.height / image.width) * 192),
+                }
+              : {
+                  height: 192,
+                  width: Math.round((image.width / image.height) * 192),
+                }
+          }
+          className="relative"
+        >
+          {image.thumbnail ? (
+            <img
+              src={image.thumbnail}
+              alt={image.fileName}
+              className="absolute inset-0 h-full w-full animate-[fade-in_200ms_ease-out] object-contain"
+              draggable={false}
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center bg-muted/50">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          )}
+        </div>
 
         {/* Info overlay */}
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-2 pb-1.5 pt-5 opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="absolute bottom-0 left-0 right-0 z-10 bg-gradient-to-t from-black/70 to-transparent px-2 pb-1.5 pt-5 opacity-0 transition-opacity group-hover:opacity-100">
           <p className="truncate text-[10px] font-medium text-white/90">
             {image.fileName}
           </p>
@@ -137,7 +164,7 @@ export function SortableImage({
             e.stopPropagation();
             handleRemove();
           }}
-          className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/50 text-white opacity-0 transition-all hover:bg-destructive group-hover:opacity-100"
+          className="absolute right-1.5 top-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-black/50 text-white opacity-0 transition-all hover:bg-destructive group-hover:opacity-100"
         >
           <X className="h-3 w-3" />
         </button>

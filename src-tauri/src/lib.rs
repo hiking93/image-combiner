@@ -21,7 +21,6 @@ struct ImageInfo {
     height: u32,
     file_size: u64,
     file_name: String,
-    thumbnail: String,
 }
 
 fn load_and_decode(path: &str) -> Result<DynamicImage, String> {
@@ -33,25 +32,48 @@ fn load_and_decode(path: &str) -> Result<DynamicImage, String> {
         .map_err(|e| format!("Failed to decode {}: {}", path, e))
 }
 
-fn resize_and_combine(images: &[DynamicImage], output_height: u32) -> DynamicImage {
+fn resize_and_combine(
+    images: &[DynamicImage],
+    output_size: u32,
+    direction: &str,
+) -> DynamicImage {
+    let vertical = direction == "vertical";
+
     let scaled: Vec<DynamicImage> = images
         .par_iter()
         .map(|img| {
             let (w, h) = img.dimensions();
-            let scale = output_height as f64 / h as f64;
-            let new_width = (w as f64 * scale).round() as u32;
-            img.resize_exact(new_width, output_height, image::imageops::FilterType::CatmullRom)
+            if vertical {
+                let scale = output_size as f64 / w as f64;
+                let new_height = (h as f64 * scale).round() as u32;
+                img.resize_exact(output_size, new_height, image::imageops::FilterType::CatmullRom)
+            } else {
+                let scale = output_size as f64 / h as f64;
+                let new_width = (w as f64 * scale).round() as u32;
+                img.resize_exact(new_width, output_size, image::imageops::FilterType::CatmullRom)
+            }
         })
         .collect();
 
-    let total_width: u32 = scaled.iter().map(|img| img.width()).sum();
-    let mut combined = DynamicImage::new_rgba8(total_width, output_height);
-    let mut x_offset: u32 = 0;
-    for img in &scaled {
-        image::imageops::overlay(&mut combined, img, x_offset as i64, 0);
-        x_offset += img.width();
+    if vertical {
+        let total_height: u32 = scaled.iter().map(|img| img.height()).sum();
+        let mut combined = DynamicImage::new_rgba8(output_size, total_height);
+        let mut y_offset: u32 = 0;
+        for img in &scaled {
+            image::imageops::overlay(&mut combined, img, 0, y_offset as i64);
+            y_offset += img.height();
+        }
+        combined
+    } else {
+        let total_width: u32 = scaled.iter().map(|img| img.width()).sum();
+        let mut combined = DynamicImage::new_rgba8(total_width, output_size);
+        let mut x_offset: u32 = 0;
+        for img in &scaled {
+            image::imageops::overlay(&mut combined, img, x_offset as i64, 0);
+            x_offset += img.width();
+        }
+        combined
     }
-    combined
 }
 
 fn encode_to_jpeg_base64(img: &DynamicImage, quality: u8) -> Result<String, String> {
@@ -180,18 +202,18 @@ async fn get_image_info(path: String) -> Result<ImageInfo, String> {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
 
-        let img = load_and_decode(&path)?;
-        let (width, height) = img.dimensions();
-
-        let thumbnail = img.thumbnail(999999, 384);
-        let thumbnail_data = encode_to_jpeg_base64(&thumbnail, 80)?;
+        let (width, height) = ImageReader::open(&path)
+            .map_err(|e| format!("Failed to open {}: {}", path, e))?
+            .with_guessed_format()
+            .map_err(|e| format!("Failed to detect format {}: {}", path, e))?
+            .into_dimensions()
+            .map_err(|e| format!("Failed to read dimensions {}: {}", path, e))?;
 
         Ok(ImageInfo {
             width,
             height,
             file_size: metadata.len(),
             file_name,
-            thumbnail: thumbnail_data,
         })
     })
     .await
@@ -208,6 +230,7 @@ async fn combine_images(
     png_lossy: bool,
     dithering: f32,
     max_colors: u32,
+    direction: String,
 ) -> Result<Vec<u8>, String> {
     tokio::task::spawn_blocking(move || {
         let total = image_paths.len();
@@ -227,7 +250,7 @@ async fn combine_images(
 
         // Step 2: Resize and combine
         emit_progress(&app, "resizing", 0, total);
-        let combined = resize_and_combine(&images, output_height);
+        let combined = resize_and_combine(&images, output_height, &direction);
         emit_progress(&app, "combining", 1, 1);
 
         // Step 3: Encode
@@ -273,6 +296,21 @@ async fn save_combined_image(
         }
         None => Err("Save cancelled".to_string()),
     }
+}
+
+#[tauri::command]
+async fn get_thumbnail(path: String, direction: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let img = load_and_decode(&path)?;
+        let thumbnail = if direction == "vertical" {
+            img.thumbnail(384, 999999)
+        } else {
+            img.thumbnail(999999, 384)
+        };
+        encode_to_jpeg_base64(&thumbnail, 80)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }
 
 #[tauri::command]
@@ -361,6 +399,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_image_info,
+            get_thumbnail,
             get_image_preview,
             combine_images,
             save_combined_image,

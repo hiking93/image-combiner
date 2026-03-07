@@ -1,4 +1,11 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+} from "react";
+import { flushSync } from "react-dom";
 import autoAnimate from "@formkit/auto-animate";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -18,6 +25,7 @@ import {
 import {
   SortableContext,
   horizontalListSortingStrategy,
+  verticalListSortingStrategy,
   arrayMove,
 } from "@dnd-kit/sortable";
 import { SortableImage, type ImageItem } from "./components/SortableImage";
@@ -69,6 +77,10 @@ function App() {
   const [quality, setQuality] = useState(() => {
     return Number(localStorage.getItem("quality")) || 85;
   });
+  const [direction, setDirection] = useState<"horizontal" | "vertical">(() => {
+    const saved = localStorage.getItem("direction");
+    return saved === "vertical" ? "vertical" : "horizontal";
+  });
   const [format, setFormat] = useState<"jpeg" | "png">(() => {
     const saved = localStorage.getItem("format");
     return saved === "png" ? "png" : "jpeg";
@@ -107,10 +119,16 @@ function App() {
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
 
+  const directionRef = useRef(direction);
+  directionRef.current = direction;
+
   const addImages = useCallback(
     async (paths: string[]) => {
       const batchId = ++loadCancelRef.current;
       setLoadingCount((c) => c + paths.length);
+
+      // Step 1: Get metadata and add to layout immediately
+      const added: { id: string; path: string }[] = [];
       await Promise.allSettled(
         paths.map(async (path) => {
           try {
@@ -119,15 +137,16 @@ function App() {
               height: number;
               file_size: number;
               file_name: string;
-              thumbnail: string;
             }>("get_image_info", { path });
             if (loadCancelRef.current !== batchId) return;
+            const id = crypto.randomUUID();
+            added.push({ id, path });
             setImages((prev) => [
               ...prev,
               {
-                id: crypto.randomUUID(),
+                id,
                 path,
-                thumbnail: info.thumbnail,
+                thumbnail: null,
                 fileName: info.file_name,
                 width: info.width,
                 height: info.height,
@@ -147,6 +166,24 @@ function App() {
           }
         }),
       );
+
+      // Step 2: Fetch thumbnails in background
+      if (loadCancelRef.current !== batchId) return;
+      for (const { id, path } of added) {
+        if (loadCancelRef.current !== batchId) return;
+        try {
+          const thumbnail = await invoke<string>("get_thumbnail", {
+            path,
+            direction: directionRef.current,
+          });
+          if (loadCancelRef.current !== batchId) return;
+          setImages((prev) =>
+            prev.map((i) => (i.id === id ? { ...i, thumbnail } : i)),
+          );
+        } catch {
+          // keep null thumbnail
+        }
+      }
     },
     [t],
   );
@@ -204,6 +241,51 @@ function App() {
     setImages((prev) => prev.filter((img) => img.id !== id));
   }, []);
 
+  const clearImages = useCallback(() => {
+    const container = imageListRef.current;
+    if (!container) return setImages([]);
+    const items = container.querySelectorAll<HTMLElement>(
+      "[data-flip-key]:not([data-flip-key='add-button'])",
+    );
+    if (items.length === 0) return setImages([]);
+
+    // Capture add button position before clear
+    const addBtn = container.querySelector<HTMLElement>(
+      "[data-flip-key='add-button']",
+    );
+    const addBtnRect = addBtn?.getBoundingClientRect();
+
+    let finished = 0;
+    items.forEach((el) => {
+      el.animate(
+        [
+          { opacity: 1, transform: "scale(1)" },
+          { opacity: 0, transform: "scale(0.8)" },
+        ],
+        { duration: 150, easing: "ease-in", fill: "forwards" },
+      ).onfinish = () => {
+        if (++finished === items.length) {
+          flushSync(() => setImages([]));
+          // FLIP animate add button after synchronous DOM update
+          if (addBtn && addBtnRect) {
+            const newRect = addBtn.getBoundingClientRect();
+            const dx = addBtnRect.left - newRect.left;
+            const dy = addBtnRect.top - newRect.top;
+            if (dx !== 0 || dy !== 0) {
+              addBtn.animate(
+                [
+                  { transform: `translate(${dx}px, ${dy}px)` },
+                  { transform: "translate(0, 0)" },
+                ],
+                { duration: 250, easing: "ease-out" },
+              );
+            }
+          }
+        }
+      };
+    });
+  }, []);
+
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(String(event.active.id));
   };
@@ -258,12 +340,13 @@ function App() {
     try {
       const data = await invoke<number[]>("combine_images", {
         imagePaths: images.map((img) => img.path),
-        outputHeight: effectiveHeight,
+        outputHeight: effectiveSize,
         quality,
         format,
         pngLossy,
         dithering: dithering / 100,
         maxColors,
+        direction,
       });
       if (combineCancelRef.current) return;
       setProcessProgress(t("saving"));
@@ -286,7 +369,38 @@ function App() {
     setProcessProgress("");
   }, []);
 
+  // Re-fetch thumbnails when direction changes
+  const imagesRef = useRef(images);
+  imagesRef.current = images;
+  useEffect(() => {
+    const currentImages = imagesRef.current;
+    if (currentImages.length === 0) return;
+    const controller = new AbortController();
+    (async () => {
+      for (const img of currentImages) {
+        if (controller.signal.aborted) return;
+        try {
+          const thumbnail = await invoke<string>("get_thumbnail", {
+            path: img.path,
+            direction,
+          });
+          if (controller.signal.aborted) return;
+          setImages((prev) =>
+            prev.map((i) => (i.id === img.id ? { ...i, thumbnail } : i)),
+          );
+        } catch {
+          // keep existing thumbnail
+        }
+      }
+    })();
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [direction]);
+
   // Persist output settings
+  useEffect(() => {
+    localStorage.setItem("direction", direction);
+  }, [direction]);
   useEffect(() => {
     localStorage.setItem("outputHeight", String(outputHeight));
   }, [outputHeight]);
@@ -339,6 +453,45 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [images, outputHeight, quality, format]);
 
+  const imageListRef = useRef<HTMLDivElement>(null);
+  const flipRectsRef = useRef<Map<string, DOMRect>>(new Map());
+
+  const captureFlipRects = useCallback(() => {
+    const container = imageListRef.current;
+    if (!container) return;
+    const rects = new Map<string, DOMRect>();
+    for (const child of container.children) {
+      const key = (child as HTMLElement).dataset.flipKey;
+      if (key) rects.set(key, child.getBoundingClientRect());
+    }
+    flipRectsRef.current = rects;
+  }, []);
+
+  // Animate after layout change (FLIP: Last, Invert, Play)
+  useLayoutEffect(() => {
+    const container = imageListRef.current;
+    if (!container || flipRectsRef.current.size === 0) return;
+    for (const child of container.children) {
+      const key = (child as HTMLElement).dataset.flipKey;
+      if (!key) continue;
+      const oldRect = flipRectsRef.current.get(key);
+      if (!oldRect) continue;
+      const newRect = child.getBoundingClientRect();
+      const dx = oldRect.left - newRect.left;
+      const dy = oldRect.top - newRect.top;
+      if (dx === 0 && dy === 0) continue;
+      (child as HTMLElement).animate(
+        [
+          { transform: `translate(${dx}px, ${dy}px)` },
+          { transform: "translate(0, 0)" },
+        ],
+        { duration: 250, easing: "ease-out" },
+      );
+    }
+    flipRectsRef.current = new Map();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [direction]);
+
   const sidebarRef = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!sidebarRef.current) return;
@@ -377,12 +530,27 @@ function App() {
     };
   }, []);
   const hasImages = images.length > 0;
+  const isVertical = direction === "vertical";
   const maxImageHeight = Math.max(0, ...images.map((img) => img.height));
-  const effectiveHeight = outputHeight === 0 ? maxImageHeight : outputHeight;
-  const estimatedWidth = images.reduce((sum, img) => {
-    const scale = effectiveHeight / img.height;
-    return sum + Math.round(img.width * scale);
-  }, 0);
+  const maxImageWidth = Math.max(0, ...images.map((img) => img.width));
+  const effectiveSize =
+    outputHeight === 0
+      ? isVertical
+        ? maxImageWidth
+        : maxImageHeight
+      : outputHeight;
+  const estimatedWidth = isVertical
+    ? effectiveSize
+    : images.reduce((sum, img) => {
+        const scale = effectiveSize / img.height;
+        return sum + Math.round(img.width * scale);
+      }, 0);
+  const estimatedHeight = isVertical
+    ? images.reduce((sum, img) => {
+        const scale = effectiveSize / img.width;
+        return sum + Math.round(img.height * scale);
+      }, 0)
+    : effectiveSize;
   const activeIndex = activeId
     ? images.findIndex((img) => img.id === activeId)
     : -1;
@@ -447,7 +615,7 @@ function App() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setImages([])}
+            onClick={clearImages}
             disabled={!hasImages}
             className="gap-1.5 text-muted-foreground hover:text-destructive"
           >
@@ -498,7 +666,9 @@ function App() {
       <div className="flex min-h-0 flex-1">
         {/* Image area */}
         <div className="flex flex-1 flex-col overflow-hidden p-4">
-          <div className="flex-1 overflow-x-auto overflow-y-hidden rounded-lg border bg-muted/30">
+          <div
+            className={`flex-1 rounded-lg border bg-muted/30 ${isVertical ? "overflow-y-auto overflow-x-hidden" : "overflow-x-auto overflow-y-hidden"}`}
+          >
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
@@ -508,9 +678,16 @@ function App() {
             >
               <SortableContext
                 items={images}
-                strategy={horizontalListSortingStrategy}
+                strategy={
+                  isVertical
+                    ? verticalListSortingStrategy
+                    : horizontalListSortingStrategy
+                }
               >
-                <div className="flex h-full w-max min-w-full items-center justify-center gap-3 p-3">
+                <div
+                  ref={imageListRef}
+                  className={`flex gap-3 p-3 ${isVertical ? "h-max min-h-full w-full flex-col items-center justify-start" : "h-full w-max min-w-full items-center justify-center"}`}
+                >
                   {images.map((img, index) => (
                     <SortableImage
                       key={img.id}
@@ -518,12 +695,14 @@ function App() {
                       index={index + 1}
                       onRemove={removeImage}
                       onSelect={handleSelectImage}
+                      vertical={isVertical}
                     />
                   ))}
                   {/* Add button */}
                   <button
+                    data-flip-key="add-button"
                     onClick={pickFiles}
-                    className="flex h-48 w-32 shrink-0 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-muted-foreground text-muted-foreground opacity-40 transition-all hover:opacity-60 hover:bg-muted/50"
+                    className={`flex shrink-0 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-muted-foreground text-muted-foreground opacity-40 transition-all hover:opacity-60 hover:bg-muted/50 ${isVertical ? "h-32 w-48" : "h-48 w-32"}`}
                   >
                     <Plus className="h-8 w-8" />
                   </button>
@@ -536,7 +715,7 @@ function App() {
                       {activeIndex + 1}
                     </div>
                     <img
-                      src={activeImage.thumbnail}
+                      src={activeImage.thumbnail ?? undefined}
                       alt={activeImage.fileName}
                       className="h-48 w-auto rounded-lg object-contain"
                     />
@@ -559,15 +738,41 @@ function App() {
           </div>
 
           <div className="space-y-2">
+            <Label className="text-xs">{t("direction")}</Label>
+            <div className="flex gap-1.5">
+              {(["horizontal", "vertical"] as const).map((dir) => (
+                <button
+                  key={dir}
+                  onClick={() => {
+                    captureFlipRects();
+                    setDirection(dir);
+                  }}
+                  className={`flex-1 rounded-md px-2 py-1 text-[11px] transition-colors ${
+                    direction === dir
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground hover:bg-muted/80"
+                  }`}
+                >
+                  {t(dir)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
             <Label htmlFor="height" className="text-xs">
-              {t("outputHeight")}
+              {isVertical ? t("outputWidth") : t("outputHeight")}
             </Label>
             <Input
               id="height"
               type="number"
               value={outputHeight === 0 ? "" : outputHeight}
               onChange={(e) => setOutputHeight(Number(e.target.value))}
-              placeholder={outputHeight === 0 ? String(maxImageHeight) : ""}
+              placeholder={
+                outputHeight === 0
+                  ? String(isVertical ? maxImageWidth : maxImageHeight)
+                  : ""
+              }
               min={100}
               max={10000}
             />
@@ -580,7 +785,7 @@ function App() {
                     : "bg-muted text-muted-foreground hover:bg-muted/80"
                 }`}
               >
-                {t("originalMax")}
+                {isVertical ? t("originalMaxWidth") : t("originalMax")}
               </button>
               {[400, 600, 800, 1080, 1440, 2160].map((h) => (
                 <button
@@ -602,7 +807,7 @@ function App() {
             <p className="-mt-3 text-[11px] text-muted-foreground">
               {t("outputSize", {
                 width: estimatedWidth,
-                height: effectiveHeight,
+                height: estimatedHeight,
               })}
             </p>
           )}
