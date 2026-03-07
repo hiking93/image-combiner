@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "image-combiner",
+  "productName": "Image Combiner",
   "version": "0.1.0",
   "identifier": "com.github.hiking93.imagecombiner",
   "build": {
@@ -16,7 +16,8 @@
         "width": 1000,
         "height": 680,
         "minWidth": 720,
-        "minHeight": 480
+        "minHeight": 480,
+        "visible": false
       }
     ],
     "security": {

@@ -4,10 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Image Combiner</title>
-    <style>
-      html { background: #fff; }
-      @media (prefers-color-scheme: dark) { html { background: #242424; color-scheme: dark; } }
-    </style>
+    <script>
+      (function() {
+        var t = localStorage.getItem("theme") || "system";
+        var dark = t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+        if (dark) document.documentElement.classList.add("dark");
+        document.documentElement.style.background = dark ? "#242424" : "#fff";
+      })();
+    </script>
   </head>
 
   <body>

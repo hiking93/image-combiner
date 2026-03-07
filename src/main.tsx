@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./i18n";
 import { initTheme } from "./components/SettingsDialog";
 import App from "./App";
@@ -12,3 +13,5 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <App />
   </React.StrictMode>,
 );
+
+getCurrentWindow().show();

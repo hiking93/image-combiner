@@ -330,7 +330,9 @@ function App() {
         );
       },
     );
-    return () => controller.destroy();
+    return () => {
+      (controller as { destroy: () => void }).destroy();
+    };
   }, []);
   const hasImages = images.length > 0;
   const maxImageHeight = Math.max(0, ...images.map((img) => img.height));
