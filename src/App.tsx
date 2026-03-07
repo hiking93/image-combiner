@@ -385,7 +385,7 @@ function App() {
           ) : (
             <div className="flex flex-1 flex-col gap-3 p-4">
               <DropZone onDrop={addImages} compact />
-              <div className="flex-1 overflow-x-auto overflow-y-hidden rounded-lg border bg-muted/30 p-3">
+              <div className="flex-1 overflow-x-auto overflow-y-hidden rounded-lg border bg-muted/30">
                 <DndContext
                   sensors={sensors}
                   collisionDetection={closestCenter}
@@ -397,7 +397,7 @@ function App() {
                     items={images}
                     strategy={horizontalListSortingStrategy}
                   >
-                    <div className="flex h-full items-center gap-3">
+                    <div className="flex h-full w-max min-w-full items-center gap-3 p-3">
                       {images.map((img, index) => (
                         <SortableImage
                           key={img.id}
